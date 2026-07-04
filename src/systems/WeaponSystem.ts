@@ -44,7 +44,7 @@ export class WeaponSystem {
   private player: PlayerController;
   onSlash: ((x: number, y: number, angle: number, reach: number) => void) | null = null;
   onBeam: ((x: number, y: number, angle: number, length: number) => void) | null = null;
-  onPulse: ((x: number, y: number, radius: number) => void) | null = null;
+  onPulse: ((x: number, y: number, radius: number, weaponId: string) => void) | null = null;
   onHit: ((x: number, y: number, damage: number) => void) | null = null;
   onFire: ((weaponId: string) => void) | null = null;
 
@@ -206,7 +206,7 @@ export class WeaponSystem {
           const dealt = this.enemies.damage(e, s.damage, 90, px, py);
           this.onHit?.(e.x, e.y, dealt);
         });
-        this.onPulse?.(px, py, radius);
+        this.onPulse?.(px, py, radius, def.id);
         break;
       }
     }

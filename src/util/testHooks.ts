@@ -20,6 +20,10 @@ export interface TestApi {
   /** Debug commands registered by GameScene when a run is live. */
   grantXp: ((n: number) => void) | null;
   killPlayer: (() => void) | null;
+  /** Jump the run clock (skips to later wave bands / boss). */
+  warpTo: ((seconds: number) => void) | null;
+  /** Kill every active enemy, bosses included. */
+  slayAll: (() => void) | null;
   ready: boolean;
   /** HUD ability button centers (canvas px), for touch simulation. */
   buttons: Array<{ x: number; y: number }>;
@@ -37,6 +41,8 @@ export const testApi: TestApi = {
   state: () => null,
   grantXp: null,
   killPlayer: null,
+  warpTo: null,
+  slayAll: null,
   ready: false,
   buttons: [],
 };

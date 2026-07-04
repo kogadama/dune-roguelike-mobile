@@ -13,6 +13,11 @@ import { PickupSystem } from '../systems/PickupSystem';
 import { WaveDirector } from '../systems/WaveDirector';
 import { DamageNumbers } from '../systems/DamageNumbers';
 import { AbilitySystem } from '../systems/AbilitySystem';
+import { ParticleDirector } from '../systems/ParticleDirector';
+import { availableEvolution } from '../data/upgrades';
+import { WEAPONS } from '../data/weapons';
+import { metaStatsFor, hasThirdSlot } from '../systems/MetaProgression';
+import { FONT } from '../gfx/AtlasBuilder';
 import { computeLayout, type LayoutInfo } from '../systems/Layout';
 import { TEST_PARAMS } from '../config';
 import { testApi } from '../util/testHooks';
@@ -35,8 +40,11 @@ export class GameScene extends Phaser.Scene {
   waves!: WaveDirector;
   damageNumbers!: DamageNumbers;
   abilities!: AbilitySystem;
+  particles!: ParticleDirector;
+  private dustTimer = 0;
   private ground!: Phaser.GameObjects.TileSprite;
   private timescale = 1;
+  private ended = false;
 
   constructor() {
     super('Game');
@@ -46,8 +54,10 @@ export class GameScene extends Phaser.Scene {
     const character = CHARACTERS[data.characterId] ?? CHARACTERS.paul;
     const map = MAPS[data.mapId] ?? MAPS.arrakeen;
     const save = this.registry.get('save') as SaveManager | undefined;
-    // Meta stat bonuses land in M5; empty for now.
-    this.run = new RunState(character, map, {});
+    const metaStats = save ? metaStatsFor(save, character.id) : {};
+    this.run = new RunState(character, map, metaStats);
+    this.ended = false;
+    this.dustTimer = 0;
     this.registry.set('run', this.run);
     this.timescale = TEST_PARAMS.timescale;
 
@@ -92,19 +102,39 @@ export class GameScene extends Phaser.Scene {
     this.damageNumbers = new DamageNumbers(this);
     this.damageNumbers.enabled = save?.data.settings.showDamageNumbers ?? true;
 
+    this.particles = new ParticleDirector(this, map.palette === 'deep' ? 'deep' : 'arrakeen');
+    this.particles.batterySaver = save?.data.settings.batterySaver ?? false;
+
     // System wiring.
     this.enemies.onDeath = (e: Enemy) => this.onEnemyDeath(e);
     this.enemies.onEnemyShot = (x, y, tx, ty, speed, dmg) =>
       this.projectiles.fireEnemyShot(x, y, tx, ty, speed, dmg);
-    this.projectiles.onHit = (x, y, dmg) => this.damageNumbers.show(x, y, dmg);
-    this.weapons.onHit = (x, y, dmg) => this.damageNumbers.show(x, y, dmg);
+    this.projectiles.onHit = (x, y, dmg) => {
+      this.damageNumbers.show(x, y, dmg);
+      this.particles.hit(x, y);
+    };
+    this.weapons.onHit = (x, y, dmg) => {
+      this.damageNumbers.show(x, y, dmg);
+      this.particles.hit(x, y);
+    };
     this.weapons.onSlash = (x, y, a, r) => this.weaponVisuals.slash(x, y, a, r);
     this.weapons.onBeam = (x, y, a, l) => this.weaponVisuals.beam(x, y, a, l);
-    this.weapons.onPulse = (x, y, r) => this.weaponVisuals.pulse(x, y, r);
+    this.weapons.onPulse = (x, y, r, weaponId) => {
+      if (weaponId === 'holtzman_cataclysm') {
+        this.weaponVisuals.pulse(x, y, r, 0x3fd0ff);
+        this.particles.holtzmanBlast(x, y);
+        this.cameras.main.shake(180, 0.006);
+      } else {
+        this.weaponVisuals.pulse(x, y, r);
+      }
+    };
     this.pickups.onLevelUp = () => this.openLevelUp('levelup');
+    this.pickups.onChest = () => this.handleChest();
     this.waves.setViewRadius(Math.max(this.layout.vw, this.layout.vh) * 0.55);
 
-    this.abilities = new AbilitySystem(this.run, this.enemies, this.player, null);
+    const thirdSlot =
+      save && hasThirdSlot(save, character.id) ? (character.capstoneAbility ?? null) : null;
+    this.abilities = new AbilitySystem(this.run, this.enemies, this.player, thirdSlot);
     this.abilities.onPulseVisual = (x, y, r, tint) => this.weaponVisuals.pulse(x, y, r, tint);
     this.abilities.onCast = (def) => {
       if (def.effect.kind === 'worldSlow') {
@@ -141,6 +171,14 @@ export class GameScene extends Phaser.Scene {
       this.run.dead = true;
       this.onDeath();
     };
+    testApi.warpTo = (seconds: number) => {
+      this.run.time = seconds;
+    };
+    testApi.slayAll = () => {
+      for (const e of this.enemies.enemies) {
+        if (e.active) this.enemies.kill(e);
+      }
+    };
   }
 
   private onEnemyDeath(e: Enemy): void {
@@ -148,11 +186,61 @@ export class GameScene extends Phaser.Scene {
     let value = e.def.xp;
     if (e.elite) value = GEM_TIERS[4];
     this.pickups.spawnGem(e.x, e.y, value);
-    if (e.elite) this.pickups.spawnSpecial(e.x + 10, e.y, 'chest');
+    if (e.elite) {
+      this.pickups.spawnSpecial(e.x + 10, e.y, 'chest');
+      this.particles.explode(e.x, e.y, true);
+    }
+    if (e.def.id === 'ornithopter') {
+      this.particles.explode(e.x, e.y, true);
+      this.cameras.main.shake(100, 0.003);
+    }
+    // Occasional water drop from tough enemies.
+    if (e.def.xp >= 4 && !e.elite && Math.random() < 0.06) {
+      this.pickups.spawnSpecial(e.x - 8, e.y, 'water');
+    }
     if (e.def.behavior === 'boss') {
       this.run.bossDefeated = true;
+      this.particles.explode(e.x, e.y, true);
+      this.cameras.main.shake(400, 0.01);
       this.endRun(true);
     }
+  }
+
+  /** Elite chests: weapon evolution if a recipe is ready, else a spice cache. */
+  private handleChest(): void {
+    const evo = availableEvolution(this.run);
+    if (evo) {
+      const idx = this.run.weapons.findIndex((w) => w.id === evo.from);
+      if (idx !== -1) {
+        this.run.weapons[idx] = { id: evo.into, level: 1, timer: 0.3 };
+        const evolved = WEAPONS[evo.into];
+        this.particles.holtzmanBlast(this.player.x, this.player.y);
+        this.cameras.main.flash(300, 63, 208, 255, true);
+        this.banner(`${evolved.name.toUpperCase()}!`);
+      }
+    } else {
+      this.run.hp = Math.min(this.run.stats.maxHp, this.run.hp + 25);
+      this.run.addXp(20);
+      this.banner('SPICE CACHE');
+    }
+  }
+
+  /** Floating world-space announcement above the player. */
+  private banner(text: string): void {
+    const t = this.add
+      .bitmapText(this.player.x, this.player.y - 26, FONT, text)
+      .setOrigin(0.5)
+      .setScale(2)
+      .setTint(0xffd23f)
+      .setDepth(30);
+    this.tweens.add({
+      targets: t,
+      y: t.y - 18,
+      alpha: { from: 1, to: 0 },
+      duration: 1600,
+      ease: 'Cubic.Out',
+      onComplete: () => t.destroy(),
+    });
   }
 
   openLevelUp(reason: 'levelup' | 'chest'): void {
@@ -169,13 +257,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   endRun(victory: boolean): void {
-    // ResultsScene lands in M4; for now return to menu after a beat.
-    this.time.delayedCall(600, () => {
+    if (this.ended) return;
+    this.ended = true;
+    const data = {
+      victory,
+      kills: this.run.kills,
+      timeSec: this.run.time,
+      level: this.run.level,
+      characterId: this.run.character.id,
+      mapId: this.run.map.id,
+    };
+    this.time.delayedCall(victory ? 1200 : 700, () => {
       this.scene.stop('Hud');
       this.registry.remove('run');
-      this.scene.start('MainMenu');
+      this.scene.start('Results', data);
     });
-    void victory;
   }
 
   private applyLayout = (): void => {
@@ -208,6 +304,14 @@ export class GameScene extends Phaser.Scene {
     this.enemies.update(dt);
     this.pickups.update(dt);
     this.waves.update(dt);
+    this.particles.update();
+
+    // Feet dust while moving.
+    this.dustTimer -= dt;
+    if (this.dustTimer <= 0 && (this.player.sprite.rotation !== 0)) {
+      this.dustTimer = 0.13;
+      this.particles.footDust(this.player.x, this.player.y + 4);
+    }
 
     if (run.dead) {
       this.onDeath();

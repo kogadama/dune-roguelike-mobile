@@ -131,6 +131,43 @@ test('GBC portrait layout renders shell and controls', async ({ page, browser })
   void page;
 });
 
+test('death flows to results screen with meta XP', async ({ page }) => {
+  const errors = await collectErrors(page);
+  await page.goto('/?autostart=paul:arrakeen&seed=5&timescale=4');
+  await waitReady(page);
+  await page.waitForFunction(() => window.__test.state()?.scene === 'Game');
+  await page.waitForTimeout(800);
+  await page.evaluate(() => window.__test.killPlayer!());
+  await page.waitForTimeout(1600);
+  await page.screenshot({ path: `${ART}/07-results.png` });
+  expect(errors.filter(realError)).toEqual([]);
+});
+
+test('boss spawns at final band and victory reaches results', async ({ page }) => {
+  const errors = await collectErrors(page);
+  await page.goto('/?autostart=paul:arrakeen&seed=9&timescale=8');
+  await waitReady(page);
+  await page.waitForFunction(() => window.__test.state()?.scene === 'Game');
+  await page.waitForTimeout(400);
+  // Warp to just before the boss event, let the wave director fire it.
+  await page.evaluate(() => window.__test.warpTo!(839));
+  await page.waitForFunction(
+    () => {
+      const s = window.__test.state();
+      return (s?.enemies ?? 0) > 0 && (s?.runTime ?? 0) > 840;
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: `${ART}/08-boss.png` });
+  // Slay everything (boss included) -> victory -> results.
+  await page.evaluate(() => window.__test.slayAll!());
+  await page.waitForTimeout(2600);
+  await page.screenshot({ path: `${ART}/09-victory.png` });
+  expect(errors.filter(realError)).toEqual([]);
+});
+
 function realError(e: string): boolean {
   // SwiftShader / headless GL warnings are not app bugs.
   if (e.includes('swiftshader') || e.includes('GPU stall')) return false;

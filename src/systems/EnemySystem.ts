@@ -25,12 +25,15 @@ export interface Enemy {
   kby: number;
   /** Ranged attack timer. */
   shotTimer: number;
-  /** Strafe behavior: fixed flight vector. */
+  /** Strafe flight vector / boss charge direction. */
   fx: number;
   fy: number;
   wobble: number;
   sprite: Phaser.GameObjects.Image;
   hitFlash: number;
+  /** Boss phase machine: 0 chase, 1 telegraph, 2 charge. */
+  bossState: number;
+  bossTimer: number;
 }
 
 export class EnemySystem {
@@ -69,6 +72,8 @@ export class EnemySystem {
         wobble: Math.random() * Math.PI * 2,
         sprite,
         hitFlash: 0,
+        bossState: 0,
+        bossTimer: 0,
       });
     }
     this.deathEmitter = scene.add.particles(0, 0, ATLAS, {
@@ -110,6 +115,8 @@ export class EnemySystem {
     e.kby = 0;
     e.shotTimer = def.ranged ? def.ranged.cooldown * (0.5 + globalRng.next() * 0.5) : 0;
     e.hitFlash = 0;
+    e.bossState = 0;
+    e.bossTimer = 3.5;
     if (def.behavior === 'strafe') {
       // Fly across the player's position.
       const dx = this.player.x - x;
@@ -181,9 +188,35 @@ export class EnemySystem {
         e.wobble += wdt * 2;
         mx = Math.cos(e.wobble);
         my = Math.sin(e.wobble * 0.7);
-      } else if (behavior === 'chase' || behavior === 'boss') {
+      } else if (behavior === 'chase') {
         mx = seekX;
         my = seekY;
+      } else if (behavior === 'boss') {
+        // Phase machine: chase -> telegraph (flash, hold) -> charge.
+        e.bossTimer -= wdt;
+        if (e.bossState === 0) {
+          mx = seekX;
+          my = seekY;
+          if (e.bossTimer <= 0) {
+            e.bossState = 1;
+            e.bossTimer = 0.8;
+          }
+        } else if (e.bossState === 1) {
+          if (e.bossTimer <= 0) {
+            e.bossState = 2;
+            e.bossTimer = 0.9;
+            e.fx = seekX;
+            e.fy = seekY;
+          }
+        } else {
+          mx = e.fx * 4.2;
+          my = e.fy * 4.2;
+          if (e.bossTimer <= 0) {
+            e.bossState = 0;
+            // Enrage: shorter rests as HP drops.
+            e.bossTimer = 1.5 + (e.hp / e.maxHp) * 2.5;
+          }
+        }
       } else if (behavior === 'swarmer') {
         e.wobble += wdt * 6;
         const s = Math.sin(e.wobble) * 0.5;
@@ -215,25 +248,27 @@ export class EnemySystem {
         }
       }
 
-      // Local separation: sample neighbors in own cell radius.
-      let sepX = 0;
-      let sepY = 0;
-      let sepN = 0;
-      this.grid.forEachInRadius(e.x, e.y, 10, (j, dx, dy, d2) => {
-        if (j === i || sepN >= 3) return sepN >= 3;
-        if (d2 > 0.01) {
-          const inv = 1 / Math.sqrt(d2);
-          sepX -= dx * inv;
-          sepY -= dy * inv;
-          sepN++;
+      // Local separation: sample neighbors in own cell radius (bosses bully through).
+      if (behavior !== 'boss') {
+        let sepX = 0;
+        let sepY = 0;
+        let sepN = 0;
+        this.grid.forEachInRadius(e.x, e.y, 10, (j, dx, dy, d2) => {
+          if (j === i || sepN >= 3) return sepN >= 3;
+          if (d2 > 0.01) {
+            const inv = 1 / Math.sqrt(d2);
+            sepX -= dx * inv;
+            sepY -= dy * inv;
+            sepN++;
+          }
+        });
+        if (sepN > 0) {
+          mx += (sepX / sepN) * 0.6;
+          my += (sepY / sepN) * 0.6;
+          const len = Math.hypot(mx, my) || 1;
+          mx /= len;
+          my /= len;
         }
-      });
-      if (sepN > 0) {
-        mx += (sepX / sepN) * 0.6;
-        my += (sepY / sepN) * 0.6;
-        const len = Math.hypot(mx, my) || 1;
-        mx /= len;
-        my /= len;
       }
 
       e.x += (mx * e.speed + e.kbx) * wdt;
@@ -262,6 +297,11 @@ export class EnemySystem {
         e.hitFlash -= dt;
         s.setTintFill(0xffffff);
         if (e.hitFlash <= 0) s.setTint(e.elite ? 0xffd23f : (e.def.tint ?? 0xffffff));
+      } else if (behavior === 'boss' && e.bossState === 1) {
+        // Charge telegraph: strobing red.
+        s.setTint(Math.sin(e.wobble * 6) > 0 ? 0xff5544 : 0xffffff);
+      } else if (behavior === 'boss' && e.bossState === 0) {
+        s.setTint(e.def.tint ?? 0xffffff);
       }
     }
   }
