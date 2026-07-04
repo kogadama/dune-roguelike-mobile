@@ -21,6 +21,8 @@ export interface TestApi {
   grantXp: ((n: number) => void) | null;
   killPlayer: (() => void) | null;
   ready: boolean;
+  /** HUD ability button centers (canvas px), for touch simulation. */
+  buttons: Array<{ x: number; y: number }>;
 }
 
 declare global {
@@ -36,6 +38,7 @@ export const testApi: TestApi = {
   grantXp: null,
   killPlayer: null,
   ready: false,
+  buttons: [],
 };
 
 export function installTestHooks(): void {

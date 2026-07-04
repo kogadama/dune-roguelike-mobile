@@ -12,6 +12,7 @@ import { WeaponSystem, WeaponVisuals } from '../systems/WeaponSystem';
 import { PickupSystem } from '../systems/PickupSystem';
 import { WaveDirector } from '../systems/WaveDirector';
 import { DamageNumbers } from '../systems/DamageNumbers';
+import { AbilitySystem } from '../systems/AbilitySystem';
 import { computeLayout, type LayoutInfo } from '../systems/Layout';
 import { TEST_PARAMS } from '../config';
 import { testApi } from '../util/testHooks';
@@ -33,6 +34,7 @@ export class GameScene extends Phaser.Scene {
   pickups!: PickupSystem;
   waves!: WaveDirector;
   damageNumbers!: DamageNumbers;
+  abilities!: AbilitySystem;
   private ground!: Phaser.GameObjects.TileSprite;
   private timescale = 1;
 
@@ -51,8 +53,24 @@ export class GameScene extends Phaser.Scene {
 
     this.applyLayout();
     this.scale.on('resize', this.applyLayout, this);
+    this.game.events.on('relayout', this.applyLayout, this);
+    const onDmgToggle = (on: boolean) => {
+      this.damageNumbers.enabled = on;
+    };
+    this.game.events.on('dmgnumbers', onDmgToggle);
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden' && this.scene.isActive()) {
+        this.scene.pause();
+        this.scene.pause('Hud');
+        this.scene.launch('Pause');
+      }
+    };
+    document.addEventListener('visibilitychange', onHidden);
     this.events.once('shutdown', () => {
       this.scale.off('resize', this.applyLayout, this);
+      this.game.events.off('relayout', this.applyLayout, this);
+      this.game.events.off('dmgnumbers', onDmgToggle);
+      document.removeEventListener('visibilitychange', onHidden);
     });
 
     const biome = map.palette === 'deep' ? 'deep' : 'arrakeen';
@@ -85,6 +103,20 @@ export class GameScene extends Phaser.Scene {
     this.weapons.onPulse = (x, y, r) => this.weaponVisuals.pulse(x, y, r);
     this.pickups.onLevelUp = () => this.openLevelUp('levelup');
     this.waves.setViewRadius(Math.max(this.layout.vw, this.layout.vh) * 0.55);
+
+    this.abilities = new AbilitySystem(this.run, this.enemies, this.player, null);
+    this.abilities.onPulseVisual = (x, y, r, tint) => this.weaponVisuals.pulse(x, y, r, tint);
+    this.abilities.onCast = (def) => {
+      if (def.effect.kind === 'worldSlow') {
+        // Prescience: blue vision flash + slight punch-in.
+        this.cameras.main.flash(220, 30, 90, 140, true);
+        this.cameras.main.zoomTo(this.layout.zoom * 1.06, 180, 'Cubic.easeOut', false, (_c, p) => {
+          if (p === 1) this.cameras.main.zoomTo(this.layout.zoom, 900, 'Cubic.easeOut');
+        });
+      } else if (def.effect.kind === 'knockbackRing' || def.effect.kind === 'aoeStun') {
+        this.cameras.main.shake(120, 0.004);
+      }
+    };
 
     this.scene.launch('Hud');
 
@@ -170,6 +202,7 @@ export class GameScene extends Phaser.Scene {
     // -> enemies -> pickups -> waves -> camera glue.
     this.player.update(dt);
     this.enemies.rebuildGrid();
+    this.abilities.update(dt);
     this.weapons.update(dt);
     this.projectiles.update(dt);
     this.enemies.update(dt);

@@ -94,6 +94,43 @@ test('accelerated run: enemies spawn, weapons kill, level-ups fire', async ({ pa
   expect(errors.filter(realError)).toEqual([]);
 });
 
+test('ability button casts and starts cooldown', async ({ page }) => {
+  const errors = await collectErrors(page);
+  await page.goto('/?autostart=paul:arrakeen&seed=3');
+  await waitReady(page);
+  await page.waitForFunction(() => window.__test.state()?.scene === 'Game');
+  await page.waitForTimeout(300);
+  const btn = await page.evaluate(() => window.__test.buttons[0]);
+  expect(btn).toBeTruthy();
+  await page.touchscreen.tap(btn!.x, btn!.y);
+  await page.waitForTimeout(200);
+  const cds = await page.evaluate(() => window.__test.state()?.cooldowns ?? []);
+  expect(Math.max(...cds)).toBeGreaterThan(0);
+  await page.screenshot({ path: `${ART}/05-ability.png` });
+  expect(errors.filter(realError)).toEqual([]);
+});
+
+test('GBC portrait layout renders shell and controls', async ({ page, browser }) => {
+  const ctx = await browser.newContext({
+    viewport: { width: 402, height: 874 },
+    deviceScaleFactor: 2,
+    hasTouch: true,
+  });
+  const p = await ctx.newPage();
+  const errors: string[] = [];
+  p.on('pageerror', (err) => errors.push(String(err)));
+  await p.goto('http://localhost:4173/?autostart=paul:arrakeen&seed=3');
+  await p.waitForFunction(() => window.__test?.ready === true, undefined, { timeout: 30_000 });
+  await p.waitForFunction(() => window.__test.state()?.scene === 'Game');
+  await p.waitForTimeout(400);
+  const layout = await p.evaluate(() => window.__test.state()?.layout);
+  expect(layout).toBe('gbc');
+  await p.screenshot({ path: `${ART}/06-gbc.png` });
+  expect(errors.filter(realError)).toEqual([]);
+  await ctx.close();
+  void page;
+});
+
 function realError(e: string): boolean {
   // SwiftShader / headless GL warnings are not app bugs.
   if (e.includes('swiftshader') || e.includes('GPU stall')) return false;
