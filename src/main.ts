@@ -14,6 +14,11 @@ import { MetaUpgradeScene } from './scenes/MetaUpgradeScene';
 
 installTestHooks();
 
+if (TEST_PARAMS.seed !== null) {
+  const { globalRng } = await import('./util/rng');
+  globalRng.reseed(TEST_PARAMS.seed);
+}
+
 const game = new Phaser.Game({
   type: TEST_PARAMS.canvas ? Phaser.CANVAS : Phaser.AUTO,
   parent: 'game',

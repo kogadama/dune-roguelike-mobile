@@ -174,7 +174,8 @@ test('save persists across reload and character select works', async ({ page }) 
   await page.goto('/?autostart=jessica:arrakeen&seed=11&timescale=8');
   await waitReady(page);
   await page.waitForFunction(() => window.__test.state()?.scene === 'Game');
-  await page.waitForFunction(() => (window.__test.state()?.kills ?? 0) > 2, undefined, { timeout: 30_000 });
+  // Survive a bit (or die trying) — either path banks meta XP for the run.
+  await page.waitForFunction(() => (window.__test.state()?.runTime ?? 0) > 8, undefined, { timeout: 30_000 });
   await page.evaluate(() => window.__test.killPlayer!());
   await page.waitForTimeout(1800);
   const saved = await page.evaluate(async () => {
@@ -197,6 +198,26 @@ test('save persists across reload and character select works', async ({ page }) 
     return save?.data?.characters?.jessica?.runs ?? 0;
   });
   expect(persisted).toBeGreaterThanOrEqual(1);
+  expect(errors.filter(realError)).toEqual([]);
+});
+
+test('deep desert: sandtrout waves and Shai-Hulud boss cycle', async ({ page }) => {
+  const errors = await collectErrors(page);
+  await page.goto('/?autostart=stilgar:deep_desert&seed=13&timescale=8');
+  await waitReady(page);
+  await page.waitForFunction(() => window.__test.state()?.scene === 'Game');
+  // Early waves: sandtrout swarm.
+  await page.waitForFunction(() => (window.__test.state()?.enemies ?? 0) > 8, undefined, { timeout: 20_000 });
+  await page.screenshot({ path: `${ART}/13-deepdesert.png` });
+  // Warp to worm time.
+  await page.evaluate(() => window.__test.warpTo!(1139));
+  await page.waitForFunction(() => (window.__test.state()?.runTime ?? 0) > 1141, undefined, { timeout: 15_000 });
+  // Let the worm cycle submerge->telegraph->emerge at least once.
+  await page.waitForTimeout(2500);
+  await page.screenshot({ path: `${ART}/14-shaihulud.png` });
+  await page.evaluate(() => window.__test.slayAll!());
+  await page.waitForTimeout(2600);
+  await page.screenshot({ path: `${ART}/15-worm-victory.png` });
   expect(errors.filter(realError)).toEqual([]);
 });
 

@@ -109,6 +109,23 @@ export class GameScene extends Phaser.Scene {
     this.enemies.onDeath = (e: Enemy) => this.onEnemyDeath(e);
     this.enemies.onEnemyShot = (x, y, tx, ty, speed, dmg) =>
       this.projectiles.fireEnemyShot(x, y, tx, ty, speed, dmg);
+    // Shai-Hulud staging: worm sign dust, charge-line telegraph, emergence.
+    let wormDustGate = 0;
+    this.enemies.onWormSign = (x, y) => {
+      if (this.time.now > wormDustGate) {
+        wormDustGate = this.time.now + 90;
+        this.particles.footDust(x, y);
+        this.particles.footDust(x + 6, y + 3);
+      }
+    };
+    this.enemies.onWormTelegraph = (x, y, dx, dy) => {
+      this.weaponVisuals.beam(x, y, Math.atan2(dy, dx), 200, 0xe0b36c);
+      this.cameras.main.shake(500, 0.002);
+    };
+    this.enemies.onWormEmerge = (x, y) => {
+      this.particles.explode(x, y, true);
+      this.cameras.main.shake(250, 0.008);
+    };
     this.projectiles.onHit = (x, y, dmg) => {
       this.damageNumbers.show(x, y, dmg);
       this.particles.hit(x, y);

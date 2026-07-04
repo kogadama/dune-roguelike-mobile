@@ -31,9 +31,11 @@ export interface Enemy {
   wobble: number;
   sprite: Phaser.GameObjects.Image;
   hitFlash: number;
-  /** Boss phase machine: 0 chase, 1 telegraph, 2 charge. */
+  /** Boss phase machine: 0 chase/submerged, 1 telegraph, 2 charge/emerged. */
   bossState: number;
   bossTimer: number;
+  /** Removed from the collision grid (submerged Shai-Hulud). */
+  untargetable: boolean;
 }
 
 export class EnemySystem {
@@ -46,6 +48,12 @@ export class EnemySystem {
   private deathEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
   onDeath: ((e: Enemy) => void) | null = null;
   onEnemyShot: ((x: number, y: number, tx: number, ty: number, speed: number, damage: number) => void) | null = null;
+  onWormSign: ((x: number, y: number) => void) | null = null;
+  onWormTelegraph: ((x: number, y: number, dx: number, dy: number) => void) | null = null;
+  onWormEmerge: ((x: number, y: number) => void) | null = null;
+  private wormSegs: Phaser.GameObjects.Image[] = [];
+  /** Ring buffer of recent head positions for the tail to follow. */
+  private wormTrail: Array<{ x: number; y: number }> = [];
 
   constructor(scene: Phaser.Scene, run: RunState, player: PlayerController) {
     this.scene = scene;
@@ -74,6 +82,7 @@ export class EnemySystem {
         hitFlash: 0,
         bossState: 0,
         bossTimer: 0,
+        untargetable: false,
       });
     }
     this.deathEmitter = scene.add.particles(0, 0, ATLAS, {
@@ -117,6 +126,13 @@ export class EnemySystem {
     e.hitFlash = 0;
     e.bossState = 0;
     e.bossTimer = 3.5;
+    e.untargetable = false;
+    if (id === 'boss_shai_hulud') {
+      // Enters submerged, hunting.
+      e.untargetable = true;
+      e.sprite.setVisible(false);
+      this.initWormTail();
+    }
     if (def.behavior === 'strafe') {
       // Fly across the player's position.
       const dx = this.player.x - x;
@@ -143,7 +159,7 @@ export class EnemySystem {
     this.grid.clear();
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i]!;
-      if (e.active) this.grid.insert(i, e.x, e.y);
+      if (e.active && !e.untargetable) this.grid.insert(i, e.x, e.y);
     }
   }
 
@@ -191,6 +207,41 @@ export class EnemySystem {
       } else if (behavior === 'chase') {
         mx = seekX;
         my = seekY;
+      } else if (behavior === 'boss' && e.def.id === 'boss_shai_hulud') {
+        // Shai-Hulud: submerged hunt -> worm-sign telegraph -> emerged charge.
+        e.bossTimer -= wdt;
+        if (e.bossState === 0) {
+          // Submerged: untargetable, dust trail betrays the approach.
+          mx = seekX;
+          my = seekY;
+          this.onWormSign?.(e.x, e.y);
+          if (e.bossTimer <= 0 || distP < 60) {
+            e.bossState = 1;
+            e.bossTimer = 0.8;
+            e.fx = seekX;
+            e.fy = seekY;
+            this.onWormTelegraph?.(e.x, e.y, e.fx, e.fy);
+          }
+        } else if (e.bossState === 1) {
+          if (e.bossTimer <= 0) {
+            e.bossState = 2;
+            e.bossTimer = 1.5;
+            e.untargetable = false;
+            e.sprite.setVisible(true);
+            this.onWormEmerge?.(e.x, e.y);
+          }
+        } else {
+          mx = e.fx * 2.4;
+          my = e.fy * 2.4;
+          if (e.bossTimer <= 0) {
+            e.bossState = 0;
+            e.bossTimer = 2.6 + (e.hp / e.maxHp) * 2;
+            e.untargetable = true;
+            e.sprite.setVisible(false);
+            this.onWormEmerge?.(e.x, e.y);
+          }
+        }
+        this.updateWormTail(e, wdt);
       } else if (behavior === 'boss') {
         // Phase machine: chase -> telegraph (flash, hold) -> charge.
         e.bossTimer -= wdt;
@@ -276,9 +327,9 @@ export class EnemySystem {
       e.kbx *= Math.exp(-8 * wdt);
       e.kby *= Math.exp(-8 * wdt);
 
-      // Contact damage.
+      // Contact damage (not while submerged).
       const touchR = e.def.radius + 5;
-      if (distP < touchR && !run.phasing) {
+      if (distP < touchR && !run.phasing && !e.untargetable) {
         if (this.player.takeDamage(e.damage)) {
           // Small self-knockback so hits read.
           e.kbx = -seekX * 60;
@@ -338,6 +389,7 @@ export class EnemySystem {
     if (!e.active) return;
     this.run.kills++;
     this.deathEmitter.emitParticleAt(e.x, e.y, e.elite ? 12 : 5);
+    if (e.def.id === 'boss_shai_hulud') this.hideWormTail();
     this.onDeath?.(e);
     this.despawn(e);
   }
@@ -351,5 +403,44 @@ export class EnemySystem {
   /** Enemy by grid index (grid indices are enemy array indices). */
   at(index: number): Enemy {
     return this.enemies[index]!;
+  }
+
+  private initWormTail(): void {
+    if (this.wormSegs.length === 0) {
+      for (let i = 0; i < 6; i++) {
+        this.wormSegs.push(
+          this.scene.add
+            .image(0, 0, ATLAS, 'en_worm_seg')
+            .setVisible(false)
+            .setDepth(7)
+            .setScale(1 - i * 0.09),
+        );
+      }
+    }
+    this.wormTrail.length = 0;
+  }
+
+  private updateWormTail(e: Enemy, wdt: number): void {
+    if (wdt > 0) {
+      this.wormTrail.unshift({ x: e.x, y: e.y });
+      if (this.wormTrail.length > 80) this.wormTrail.pop();
+    }
+    const visible = !e.untargetable && e.active;
+    for (let i = 0; i < this.wormSegs.length; i++) {
+      const seg = this.wormSegs[i]!;
+      const idx = (i + 1) * 7;
+      const p = this.wormTrail[Math.min(idx, this.wormTrail.length - 1)];
+      if (!p || !visible) {
+        seg.setVisible(false);
+        continue;
+      }
+      seg.setVisible(true).setPosition(p.x, p.y);
+      const ahead = this.wormTrail[Math.min(Math.max(0, idx - 4), this.wormTrail.length - 1)];
+      if (ahead) seg.setFlipX(ahead.x < p.x);
+    }
+  }
+
+  hideWormTail(): void {
+    for (const seg of this.wormSegs) seg.setVisible(false);
   }
 }
