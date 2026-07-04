@@ -7,6 +7,7 @@ import type { SaveManager } from '../save/SaveManager';
 import type { CharacterId, MapId } from '../types';
 import { CHARACTERS } from '../data/characters';
 import { addMetaXp } from '../systems/MetaProgression';
+import { music, sfx } from '../audio/index';
 
 export interface ResultsData {
   victory: boolean;
@@ -33,6 +34,8 @@ export class ResultsScene extends Phaser.Scene {
     const levelsGained = addMetaXp(save, data.characterId, metaXp, data);
 
     this.cameras.main.setBackgroundColor(data.victory ? '#132213' : '#1a0d08');
+    music.play('menu');
+    sfx.play(data.victory ? 'evolve' : 'hurt');
 
     const title = data.victory ? 'ARRAKIS PREVAILS' : 'THE DESERT TAKES YOU';
     const t = centerPixText(this, w / 2, h * 0.14, title, u + 1, hexToInt(data.victory ? C.green : C.red));

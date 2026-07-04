@@ -18,6 +18,10 @@ import { availableEvolution } from '../data/upgrades';
 import { WEAPONS } from '../data/weapons';
 import { metaStatsFor, hasThirdSlot } from '../systems/MetaProgression';
 import { FONT } from '../gfx/AtlasBuilder';
+import { sfx, music } from '../audio/index';
+import type { SfxKey } from '../audio/Sfx';
+import type { MusicKey } from '../audio/Music';
+import { haptic } from '../util/haptics';
 import { computeLayout, type LayoutInfo } from '../systems/Layout';
 import { TEST_PARAMS } from '../config';
 import { testApi } from '../util/testHooks';
@@ -45,6 +49,7 @@ export class GameScene extends Phaser.Scene {
   private ground!: Phaser.GameObjects.TileSprite;
   private timescale = 1;
   private ended = false;
+  private lastHp = 0;
 
   constructor() {
     super('Game');
@@ -58,6 +63,8 @@ export class GameScene extends Phaser.Scene {
     this.run = new RunState(character, map, metaStats);
     this.ended = false;
     this.dustTimer = 0;
+    this.lastHp = this.run.hp;
+    music.play(map.music as MusicKey);
     this.registry.set('run', this.run);
     this.timescale = TEST_PARAMS.timescale;
 
@@ -68,6 +75,10 @@ export class GameScene extends Phaser.Scene {
       this.damageNumbers.enabled = on;
     };
     this.game.events.on('dmgnumbers', onDmgToggle);
+    const onBattery = (on: boolean) => {
+      this.particles.batterySaver = on;
+    };
+    this.game.events.on('batterysaver', onBattery);
     const onHidden = () => {
       if (document.visibilityState === 'hidden' && this.scene.isActive()) {
         this.scene.pause();
@@ -80,6 +91,7 @@ export class GameScene extends Phaser.Scene {
       this.scale.off('resize', this.applyLayout, this);
       this.game.events.off('relayout', this.applyLayout, this);
       this.game.events.off('dmgnumbers', onDmgToggle);
+      this.game.events.off('batterysaver', onBattery);
       document.removeEventListener('visibilitychange', onHidden);
     });
 
@@ -125,6 +137,8 @@ export class GameScene extends Phaser.Scene {
     this.enemies.onWormEmerge = (x, y) => {
       this.particles.explode(x, y, true);
       this.cameras.main.shake(250, 0.008);
+      sfx.play('worm');
+      haptic('heavy');
     };
     this.projectiles.onHit = (x, y, dmg) => {
       this.damageNumbers.show(x, y, dmg);
@@ -147,6 +161,20 @@ export class GameScene extends Phaser.Scene {
     };
     this.pickups.onLevelUp = () => this.openLevelUp('levelup');
     this.pickups.onChest = () => this.handleChest();
+    this.pickups.onCollect = (kind) => {
+      if (kind === 'gem') sfx.play('pickup', 0.5);
+      else if (kind === 'water') sfx.play('pickup');
+    };
+    this.weapons.onFire = (weaponId) => {
+      const def = WEAPONS[weaponId as keyof typeof WEAPONS];
+      if (def) sfx.play(def.fireSfx as SfxKey, 0.6);
+    };
+    this.waves.onBossSpawn = (name) => {
+      music.play('boss');
+      sfx.play(name.includes('Shai') ? 'worm' : 'boom');
+      this.banner(name.toUpperCase());
+      haptic('heavy');
+    };
     this.waves.setViewRadius(Math.max(this.layout.vw, this.layout.vh) * 0.55);
 
     const thirdSlot =
@@ -154,6 +182,8 @@ export class GameScene extends Phaser.Scene {
     this.abilities = new AbilitySystem(this.run, this.enemies, this.player, thirdSlot);
     this.abilities.onPulseVisual = (x, y, r, tint) => this.weaponVisuals.pulse(x, y, r, tint);
     this.abilities.onCast = (def) => {
+      sfx.play(def.effect.kind === 'coneStun' || def.effect.kind === 'aoeStun' ? 'voice' : 'ability');
+      haptic('light');
       if (def.effect.kind === 'worldSlow') {
         // Prescience: blue vision flash + slight punch-in.
         this.cameras.main.flash(220, 30, 90, 140, true);
@@ -234,11 +264,14 @@ export class GameScene extends Phaser.Scene {
         this.particles.holtzmanBlast(this.player.x, this.player.y);
         this.cameras.main.flash(300, 63, 208, 255, true);
         this.banner(`${evolved.name.toUpperCase()}!`);
+        sfx.play('evolve');
+        haptic('heavy');
       }
     } else {
       this.run.hp = Math.min(this.run.stats.maxHp, this.run.hp + 25);
       this.run.addXp(20);
       this.banner('SPICE CACHE');
+      sfx.play('chest');
     }
   }
 
@@ -264,6 +297,8 @@ export class GameScene extends Phaser.Scene {
     if (this.scene.isPaused()) return;
     const options = rollUpgradeOptions(this.run);
     if (options.length === 0) return;
+    sfx.play('levelup');
+    haptic('light');
     this.scene.pause();
     this.scene.pause('Hud');
     this.scene.launch('LevelUp', { options, reason });
@@ -329,6 +364,15 @@ export class GameScene extends Phaser.Scene {
       this.dustTimer = 0.13;
       this.particles.footDust(this.player.x, this.player.y + 4);
     }
+
+    // Hurt feedback: any HP drop this frame.
+    if (run.hp < this.lastHp - 0.01) {
+      sfx.play('hurt');
+      haptic('medium');
+      this.cameras.main.flash(90, 120, 20, 20, true);
+      if (run.stats.armor > 0) this.particles.shieldShimmer(this.player.x, this.player.y);
+    }
+    this.lastHp = run.hp;
 
     if (run.dead) {
       this.onDeath();

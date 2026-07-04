@@ -5,6 +5,7 @@ import type { RunState } from '../systems/RunState';
 import { ATLAS } from '../gfx/AtlasBuilder';
 import { C, hexToInt } from '../gfx/palettes';
 import { pixText } from '../util/ui';
+import { sfx } from '../audio/index';
 
 export interface LevelUpData {
   options: UpgradeOption[];
@@ -93,6 +94,7 @@ export class LevelUpScene extends Phaser.Scene {
     // Debounce so a joystick drag release can't instantly pick a card.
     this.time.delayedCall(350, () => {
       container.on('pointerdown', () => {
+        sfx.play('click');
         applyUpgrade(run, opt);
         this.scene.stop();
         this.scene.resume('Game');
