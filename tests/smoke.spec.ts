@@ -221,6 +221,35 @@ test('deep desert: sandtrout waves and Shai-Hulud boss cycle', async ({ page }) 
   expect(errors.filter(realError)).toEqual([]);
 });
 
+test('rotation mid-run swaps layouts cleanly', async ({ page }) => {
+  const errors = await collectErrors(page);
+  await page.goto('/?autostart=paul:arrakeen&seed=21&timescale=4');
+  await waitReady(page);
+  await page.waitForFunction(() => window.__test.state()?.scene === 'Game');
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(() => window.__test.state()?.layout)).toBe('landscape');
+
+  // Rotate to portrait -> GBC shell.
+  await page.setViewportSize({ width: 402, height: 874 });
+  await page.waitForTimeout(1300); // allow the settle-resize passes to run
+  expect(await page.evaluate(() => window.__test.state()?.layout)).toBe('gbc');
+  await page.screenshot({ path: `${ART}/17-rotate-portrait.png` });
+
+  // And back to landscape.
+  await page.setViewportSize({ width: 874, height: 402 });
+  await page.waitForTimeout(1300);
+  expect(await page.evaluate(() => window.__test.state()?.layout)).toBe('landscape');
+  await page.screenshot({ path: `${ART}/18-rotate-landscape.png` });
+
+  // Rotate while the level-up overlay is open.
+  await page.evaluate(() => window.__test.grantXp!(500));
+  await page.waitForTimeout(500);
+  await page.setViewportSize({ width: 402, height: 874 });
+  await page.waitForTimeout(1300);
+  await page.screenshot({ path: `${ART}/19-rotate-levelup.png` });
+  expect(errors.filter(realError)).toEqual([]);
+});
+
 function realError(e: string): boolean {
   // SwiftShader / headless GL warnings are not app bugs.
   if (e.includes('swiftshader') || e.includes('GPU stall')) return false;

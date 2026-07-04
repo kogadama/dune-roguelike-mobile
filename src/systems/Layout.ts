@@ -16,19 +16,15 @@ export interface LayoutInfo {
   safe: { top: number; bottom: number; left: number; right: number };
 }
 
-let safeCache: LayoutInfo['safe'] | null = null;
-
-/** Safe-area insets from the CSS vars set in index.html (notch / home bar). */
+/**
+ * Safe-area insets from the CSS vars set in index.html (notch / home bar).
+ * Read fresh every call — rotation moves the notch to a different edge, so
+ * caching these breaks the layout after an orientation change.
+ */
 export function safeInsets(): LayoutInfo['safe'] {
-  if (safeCache) return safeCache;
   const cs = getComputedStyle(document.documentElement);
   const px = (name: string) => parseFloat(cs.getPropertyValue(name)) || 0;
-  safeCache = { top: px('--sat'), bottom: px('--sab'), left: px('--sal'), right: px('--sar') };
-  return safeCache;
-}
-
-export function invalidateSafeInsets(): void {
-  safeCache = null;
+  return { top: px('--sat'), bottom: px('--sab'), left: px('--sal'), right: px('--sar') };
 }
 
 /** GBC mode: fraction of canvas height used by the "screen" region. */

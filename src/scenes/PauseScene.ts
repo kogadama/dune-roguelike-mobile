@@ -21,6 +21,8 @@ export class PauseScene extends Phaser.Scene {
 
   create(data: PauseData): void {
     this.fromMenu = data.fromMenu ?? false;
+    this.scale.on('resize', this.onResize, this);
+    this.events.once('shutdown', () => this.scale.off('resize', this.onResize, this));
     const w = this.scale.width;
     const h = this.scale.height;
     const u = Phaser.Math.Clamp(Math.round(Math.min(w, h) / 200), 2, 5);
@@ -113,6 +115,10 @@ export class PauseScene extends Phaser.Scene {
       }, hexToInt(C.red));
     }
   }
+
+  private onResize = (): void => {
+    this.scene.restart({ fromMenu: this.fromMenu });
+  };
 
   private relabel(t: Phaser.GameObjects.BitmapText, label: string): void {
     t.setText(label);

@@ -14,8 +14,18 @@ export class MainMenuScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#120a05');
     music.play('menu');
     this.layout();
-    this.scale.on('resize', () => this.layout());
+    this.scale.on('resize', this.layout, this);
+    this.events.once('shutdown', () => this.scale.off('resize', this.layout, this));
+
+    // Registered once (not per-layout) so rotation can't stack handlers.
+    this.input.on('pointerdown', this.onTap, this);
   }
+
+  private onTap = (): void => {
+    sfx.play('click');
+    this.input.off('pointerdown', this.onTap, this);
+    this.scene.start('CharacterSelect');
+  };
 
   private layout(): void {
     this.children.removeAll(true);
@@ -54,11 +64,6 @@ export class MainMenuScene extends Phaser.Scene {
       sfx.play('click');
       this.scene.start('Pause', { fromMenu: true });
       void p;
-    });
-
-    this.input.once('pointerdown', () => {
-      sfx.play('click');
-      this.scene.start('CharacterSelect');
     });
   }
 }

@@ -61,6 +61,21 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+// iOS reports stale viewport dimensions for a few hundred ms after rotation,
+// so a single resize pass lands on the wrong size and sticks. Re-measure a
+// few times after any resize/rotation signal; refresh() only emits when the
+// parent size actually changed, so the extra passes are free.
+let rotateTimers: number[] = [];
+const settleResize = () => {
+  for (const t of rotateTimers) clearTimeout(t);
+  rotateTimers = [50, 250, 600, 1000].map((ms) =>
+    window.setTimeout(() => game.scale.refresh(), ms),
+  );
+};
+window.addEventListener('resize', settleResize);
+window.addEventListener('orientationchange', settleResize);
+window.visualViewport?.addEventListener('resize', settleResize);
+
 // PWA service worker (vite-plugin-pwa virtual module).
 if ('serviceWorker' in navigator) {
   import('virtual:pwa-register')
