@@ -35,6 +35,37 @@ test('boots to main menu with no errors', async ({ page }) => {
   expect(hookErrors.filter(realError)).toEqual([]);
 });
 
+test('joystick drag moves the player', async ({ page }) => {
+  const errors = await collectErrors(page);
+  await page.goto('/?autostart=paul:arrakeen&seed=42');
+  await waitReady(page);
+  await page.waitForFunction(() => window.__test.state()?.scene === 'Game');
+  const before = await page.evaluate(() => {
+    const s = window.__test.state()!;
+    return { x: s.playerX, y: s.playerY };
+  });
+  // Drag on right half of screen: joystick spawns under the touch.
+  await page.touchscreen.tap(650, 250); // no-op tap should not crash
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ x: 650, y: 250, id: 1 }],
+  });
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [{ x: 720, y: 250, id: 1 }],
+  });
+  await page.waitForTimeout(700);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  const after = await page.evaluate(() => {
+    const s = window.__test.state()!;
+    return { x: s.playerX, y: s.playerY };
+  });
+  expect(after.x).toBeGreaterThan(before.x + 20);
+  await page.screenshot({ path: `${ART}/02-game-move.png` });
+  expect(errors.filter(realError)).toEqual([]);
+});
+
 function realError(e: string): boolean {
   // SwiftShader / headless GL warnings are not app bugs.
   if (e.includes('swiftshader') || e.includes('GPU stall')) return false;

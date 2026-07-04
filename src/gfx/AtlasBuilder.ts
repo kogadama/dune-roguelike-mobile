@@ -36,7 +36,6 @@ export function buildAtlas(scene: Phaser.Scene): void {
   }
 
   addFxFrames(items);
-  addTiles(items);
 
   // Shelf pack, tallest first.
   const sorted = [...items].sort((a, b) => b.h - a.h);
@@ -75,7 +74,53 @@ export function buildAtlas(scene: Phaser.Scene): void {
   }
   tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
 
+  buildGroundTextures(scene);
   registerFont(scene);
+}
+
+/**
+ * Ground is a repeating 128x128 (power-of-two, so TileSprite can wrap it in
+ * WebGL) canvas per biome, composed of 16 seeded dithered 32px tiles.
+ */
+function buildGroundTextures(scene: Phaser.Scene): void {
+  const TILE = 32;
+  const biomes: Record<string, { base: string; specks: string[]; rare: string }> = {
+    arrakeen: { base: C.sand2, specks: [C.sand1, C.sand3], rare: '#6a4a28' },
+    deep: { base: C.sand3, specks: [C.sand2, C.sand4], rare: C.spice2 },
+  };
+  for (const [biome, cfg] of Object.entries(biomes)) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d')!;
+    const rng = new Rng(0xa77a + biome.length);
+    for (let ty = 0; ty < 4; ty++) {
+      for (let tx = 0; tx < 4; tx++) {
+        const x = tx * TILE;
+        const y = ty * TILE;
+        ctx.fillStyle = cfg.base;
+        ctx.fillRect(x, y, TILE, TILE);
+        const specks = rng.int(30, 48);
+        for (let i = 0; i < specks; i++) {
+          const px = rng.int(0, TILE - 1);
+          const py = rng.int(0, TILE - 1);
+          ctx.fillStyle = rng.chance(0.05) ? cfg.rare : rng.pick(cfg.specks);
+          ctx.fillRect(x + px, y + py, rng.chance(0.3) ? 2 : 1, 1);
+        }
+        if (rng.chance(0.5)) {
+          ctx.fillStyle = cfg.specks[0]!;
+          const ry = y + rng.int(4, TILE - 5);
+          const len = rng.int(8, TILE);
+          const sx = x + rng.int(0, TILE - 1);
+          for (let i = 0; i < len; i += 2) {
+            ctx.fillRect(x + ((sx - x + i) % TILE), ry + (i % 6 === 0 ? 1 : 0), 1, 1);
+          }
+        }
+      }
+    }
+    const tex = scene.textures.addCanvas(`ground_${biome}`, canvas);
+    tex?.setFilter(Phaser.Textures.FilterMode.NEAREST);
+  }
 }
 
 /**
@@ -217,40 +262,4 @@ function addFxFrames(items: PackItem[]): void {
       ctx.fillRect(x, y + 1, 10, 2);
     },
   });
-}
-
-/** Seeded dithered ground tiles: 4 variants per map biome. */
-function addTiles(items: PackItem[]): void {
-  const TILE = 24;
-  const biomes: Record<string, { base: string; specks: string[]; rare: string }> = {
-    arrakeen: { base: C.sand2, specks: [C.sand1, C.sand3], rare: '#6a4a28' },
-    deep: { base: C.sand3, specks: [C.sand2, C.sand4], rare: C.spice2 },
-  };
-  for (const [biome, cfg] of Object.entries(biomes)) {
-    for (let v = 0; v < 4; v++) {
-      const rng = new Rng(0xd00d + v * 131 + biome.length * 7);
-      items.push({
-        key: `tile_${biome}_${v}`,
-        w: TILE,
-        h: TILE,
-        draw: (ctx, x, y) => {
-          ctx.fillStyle = cfg.base;
-          ctx.fillRect(x, y, TILE, TILE);
-          const specks = 26 + v * 4;
-          for (let i = 0; i < specks; i++) {
-            const px = rng.int(0, TILE - 1);
-            const py = rng.int(0, TILE - 1);
-            ctx.fillStyle = rng.chance(0.06) ? cfg.rare : rng.pick(cfg.specks);
-            ctx.fillRect(x + px, y + py, rng.chance(0.3) ? 2 : 1, 1);
-          }
-          // Occasional dune ripple line.
-          if (rng.chance(0.6)) {
-            ctx.fillStyle = cfg.specks[0]!;
-            const ry = rng.int(3, TILE - 4);
-            for (let i = 0; i < TILE; i += 2) ctx.fillRect(x + i, y + ry + (i % 4 === 0 ? 1 : 0), 1, 1);
-          }
-        },
-      });
-    }
-  }
 }
