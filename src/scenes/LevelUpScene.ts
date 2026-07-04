@@ -15,11 +15,16 @@ export interface LevelUpData {
 
 /** Pick-1-of-3 overlay. Pauses Game+Hud while open. */
 export class LevelUpScene extends Phaser.Scene {
+  private payload!: LevelUpData;
+
   constructor() {
     super('LevelUp');
   }
 
   create(data: LevelUpData): void {
+    this.payload = data;
+    this.scale.on('resize', this.onResize, this);
+    this.events.once('shutdown', () => this.scale.off('resize', this.onResize, this));
     const w = this.scale.width;
     const h = this.scale.height;
     const run = this.registry.get('run') as RunState;
@@ -102,6 +107,11 @@ export class LevelUpScene extends Phaser.Scene {
       });
     });
   }
+
+  private onResize = (): void => {
+    // Same options, fresh geometry (rotation while the overlay is open).
+    this.scene.restart(this.payload);
+  };
 
   private wrap(s: string, width: number): string {
     const words = s.split(' ');

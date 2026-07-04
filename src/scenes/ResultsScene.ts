@@ -1,12 +1,10 @@
 import Phaser from 'phaser';
 import { C, hexToInt } from '../gfx/palettes';
 import { pixText, centerPixText } from '../util/ui';
-import { metaXpForRun } from '../data/balance';
 import { ATLAS } from '../gfx/AtlasBuilder';
 import type { SaveManager } from '../save/SaveManager';
 import type { CharacterId, MapId } from '../types';
 import { CHARACTERS } from '../data/characters';
-import { addMetaXp } from '../systems/MetaProgression';
 import { music, sfx } from '../audio/index';
 
 export interface ResultsData {
@@ -16,22 +14,25 @@ export interface ResultsData {
   level: number;
   characterId: CharacterId;
   mapId: MapId;
+  /** Already awarded by GameScene.endRun — display only. */
+  metaXp: number;
+  levelsGained: number;
 }
 
 export class ResultsScene extends Phaser.Scene {
+  private payload!: ResultsData;
+
   constructor() {
     super('Results');
   }
 
   create(data: ResultsData): void {
+    this.payload = data;
     const w = this.scale.width;
     const h = this.scale.height;
     const u = Phaser.Math.Clamp(Math.round(Math.min(w, h) / 200), 2, 5);
     const save = this.registry.get('save') as SaveManager;
     const character = CHARACTERS[data.characterId];
-
-    const metaXp = metaXpForRun(data.kills, data.timeSec, data.victory);
-    const levelsGained = addMetaXp(save, data.characterId, metaXp, data);
 
     this.cameras.main.setBackgroundColor(data.victory ? '#132213' : '#1a0d08');
     music.play('menu');
@@ -51,7 +52,7 @@ export class ResultsScene extends Phaser.Scene {
       [`SURVIVED`, `${mins}:${secs.toString().padStart(2, '0')}`],
       [`KILLS`, `${data.kills}`],
       [`LEVEL`, `${data.level}`],
-      [`META XP`, `+${metaXp}`],
+      [`META XP`, `+${data.metaXp}`],
     ];
     let y = h * 0.52;
     for (const [k, v] of lines) {
@@ -62,7 +63,7 @@ export class ResultsScene extends Phaser.Scene {
       y += Math.max(18, h * 0.05);
     }
 
-    if (levelsGained > 0) {
+    if (data.levelsGained > 0) {
       const lvlUp = centerPixText(
         this,
         w / 2,
@@ -78,10 +79,17 @@ export class ResultsScene extends Phaser.Scene {
     const prompt = centerPixText(this, w / 2, Math.min(h * 0.9, y + h * 0.08), 'TAP TO CONTINUE', u, hexToInt(C.white));
     this.tweens.add({ targets: prompt, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 });
 
+    this.scale.on('resize', this.onResize, this);
+    this.events.once('shutdown', () => this.scale.off('resize', this.onResize, this));
+
     this.time.delayedCall(600, () => {
       this.input.once('pointerdown', () => {
         this.scene.start('MainMenu');
       });
     });
   }
+
+  private onResize = (): void => {
+    this.scene.restart(this.payload);
+  };
 }

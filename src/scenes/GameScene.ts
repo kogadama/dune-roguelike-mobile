@@ -16,7 +16,8 @@ import { AbilitySystem } from '../systems/AbilitySystem';
 import { ParticleDirector } from '../systems/ParticleDirector';
 import { availableEvolution } from '../data/upgrades';
 import { WEAPONS } from '../data/weapons';
-import { metaStatsFor, hasThirdSlot } from '../systems/MetaProgression';
+import { metaStatsFor, hasThirdSlot, addMetaXp } from '../systems/MetaProgression';
+import { metaXpForRun } from '../data/balance';
 import { FONT } from '../gfx/AtlasBuilder';
 import { sfx, music } from '../audio/index';
 import type { SfxKey } from '../audio/Sfx';
@@ -311,6 +312,16 @@ export class GameScene extends Phaser.Scene {
   endRun(victory: boolean): void {
     if (this.ended) return;
     this.ended = true;
+    // Award meta XP here (exactly once) — ResultsScene only displays it, so
+    // it can safely re-render on rotation.
+    const save = this.registry.get('save') as SaveManager;
+    const metaXp = metaXpForRun(this.run.kills, this.run.time, victory);
+    const levelsGained = addMetaXp(save, this.run.character.id, metaXp, {
+      victory,
+      kills: this.run.kills,
+      timeSec: this.run.time,
+      mapId: this.run.map.id,
+    });
     const data = {
       victory,
       kills: this.run.kills,
@@ -318,6 +329,8 @@ export class GameScene extends Phaser.Scene {
       level: this.run.level,
       characterId: this.run.character.id,
       mapId: this.run.map.id,
+      metaXp,
+      levelsGained,
     };
     this.time.delayedCall(victory ? 1200 : 700, () => {
       this.scene.stop('Hud');
