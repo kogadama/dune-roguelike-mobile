@@ -6,7 +6,7 @@ import { skillPointsAvailable } from '../systems/MetaProgression';
 import type { CharacterId, MapId } from '../types';
 import { ATLAS } from '../gfx/AtlasBuilder';
 import { C, hexToInt } from '../gfx/palettes';
-import { pixText, centerPixText } from '../util/ui';
+import { pixText, centerPixText, uiBounds } from '../util/ui';
 import type { SaveManager } from '../save/SaveManager';
 
 export class CharacterSelectScene extends Phaser.Scene {
@@ -26,20 +26,24 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   private render = (): void => {
     this.children.removeAll(true);
-    const w = this.scale.width;
-    const h = this.scale.height;
+    // All layout happens inside the safe-area rect (Dynamic Island / home bar).
+    const B = uiBounds(this);
+    const ox = B.x;
+    const oy = B.y;
+    const w = B.w;
+    const h = B.h;
     const u = Phaser.Math.Clamp(Math.round(Math.min(w, h) / 200), 2, 5);
     const save = this.registry.get('save') as SaveManager;
     const portrait = h > w;
 
-    centerPixText(this, w / 2, h * 0.06, 'CHOOSE YOUR CHAMPION', u, hexToInt(C.spice3));
+    centerPixText(this, ox + w / 2, oy + h * 0.06, 'CHOOSE YOUR CHAMPION', u, hexToInt(C.spice3));
 
     // Character cards.
     const cols = portrait ? 2 : 4;
     const cardW = portrait ? w * 0.42 : Math.min(w * 0.21, 240);
     const cardH = portrait ? h * 0.2 : Math.min(h * 0.42, 300);
     const gapX = portrait ? w * 0.05 : (w - cols * cardW) / (cols + 1);
-    const startY = portrait ? h * 0.12 : h * 0.14;
+    const startY = oy + (portrait ? h * 0.12 : h * 0.14);
 
     CHARACTER_ORDER.forEach((id, i) => {
       const def = CHARACTERS[id];
@@ -47,8 +51,8 @@ export class CharacterSelectScene extends Phaser.Scene {
       const col = i % cols;
       const row = Math.floor(i / cols);
       const cx = portrait
-        ? w / 2 + (col === 0 ? -(cardW / 2 + gapX / 2) : cardW / 2 + gapX / 2)
-        : gapX + col * (cardW + gapX) + cardW / 2;
+        ? ox + w / 2 + (col === 0 ? -(cardW / 2 + gapX / 2) : cardW / 2 + gapX / 2)
+        : ox + gapX + col * (cardW + gapX) + cardW / 2;
       const cy = startY + row * (cardH + (portrait ? h * 0.025 : 0)) + cardH / 2;
 
       const selected = id === this.selectedChar;
@@ -79,12 +83,12 @@ export class CharacterSelectScene extends Phaser.Scene {
     // Selected character detail line.
     const def = CHARACTERS[this.selectedChar];
     const cs = save.data.characters[this.selectedChar];
-    const detailY = portrait ? h * 0.6 : h * 0.62;
-    centerPixText(this, w / 2, detailY, `${def.title} - ${def.blurb}`, Math.max(1, u - 2) || 1, hexToInt(C.sand4));
+    const detailY = oy + (portrait ? h * 0.6 : h * 0.62);
+    centerPixText(this, ox + w / 2, detailY, `${def.title} - ${def.blurb}`, Math.max(1, u - 2) || 1, hexToInt(C.sand4));
     const xpNeed = metaXpToNext(cs.level);
     centerPixText(
       this,
-      w / 2,
+      ox + w / 2,
       detailY + 14 * (u / 2),
       `META ${cs.xp}/${xpNeed} XP`,
       Math.max(1, u - 2) || 1,
@@ -92,12 +96,12 @@ export class CharacterSelectScene extends Phaser.Scene {
     );
 
     // Map selector.
-    const mapY = portrait ? h * 0.7 : h * 0.72;
+    const mapY = oy + (portrait ? h * 0.7 : h * 0.72);
     const mapIds: MapId[] = ['arrakeen', 'deep_desert'];
     mapIds.forEach((mid, i) => {
       const unlocked = save.data.unlockedMaps.includes(mid);
       const selected = this.selectedMap === mid;
-      const mx = w / 2 + (i === 0 ? -w * 0.18 : w * 0.18);
+      const mx = ox + w / 2 + (i === 0 ? -w * 0.18 : w * 0.18);
       const label = unlocked ? MAPS[mid].name : 'LOCKED';
       const chip = centerPixText(this, mx, mapY, label, Math.max(1, u - 1), selected && unlocked ? hexToInt(C.spice3) : hexToInt(unlocked ? C.sand4 : C.sand2));
       if (selected && unlocked) {
@@ -115,21 +119,21 @@ export class CharacterSelectScene extends Phaser.Scene {
     });
 
     // Action buttons.
-    const btnY = portrait ? h * 0.82 : h * 0.85;
-    const upBtn = centerPixText(this, w * 0.28, btnY, 'UPGRADES', u, hexToInt(C.blue));
+    const btnY = oy + (portrait ? h * 0.82 : h * 0.85);
+    const upBtn = centerPixText(this, ox + w * 0.28, btnY, 'UPGRADES', u, hexToInt(C.blue));
     upBtn.setInteractive({ useHandCursor: true });
     upBtn.on('pointerdown', () => {
       this.scene.start('MetaUpgrade', { characterId: this.selectedChar });
     });
 
-    const startBtn = centerPixText(this, w * 0.72, btnY, 'START', u + 1, hexToInt(C.green));
+    const startBtn = centerPixText(this, ox + w * 0.72, btnY, 'START', u + 1, hexToInt(C.green));
     startBtn.setInteractive({ useHandCursor: true });
     startBtn.on('pointerdown', () => {
       this.scene.start('Game', { characterId: this.selectedChar, mapId: this.selectedMap });
     });
     this.tweens.add({ targets: startBtn, alpha: 0.55, duration: 700, yoyo: true, repeat: -1 });
 
-    const backBtn = pixText(this, 10, 10, '< BACK', Math.max(1, u - 1), hexToInt(C.sand4));
+    const backBtn = pixText(this, ox + 10, oy + 10, '< BACK', Math.max(1, u - 1), hexToInt(C.sand4));
     backBtn.setInteractive({ useHandCursor: true });
     backBtn.on('pointerdown', () => this.scene.start('MainMenu'));
   };

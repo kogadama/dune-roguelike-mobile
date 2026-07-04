@@ -1,5 +1,27 @@
 import Phaser from 'phaser';
 import { FONT } from '../gfx/AtlasBuilder';
+import { safeInsets } from '../systems/Layout';
+
+export interface UiBounds {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Canvas minus safe-area insets (Dynamic Island / home bar). All menu
+ * content must lay out inside this rect; only backgrounds go full-bleed.
+ */
+export function uiBounds(scene: Phaser.Scene): UiBounds {
+  const s = safeInsets();
+  return {
+    x: s.left,
+    y: s.top,
+    w: scene.scale.width - s.left - s.right,
+    h: scene.scale.height - s.top - s.bottom,
+  };
+}
 
 /** Bitmap text helper — all UI text goes through this (uppercased for the 3x5 font). */
 export function pixText(

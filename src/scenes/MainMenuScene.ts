@@ -4,6 +4,7 @@ import { ATLAS } from '../gfx/AtlasBuilder';
 import { C, hexToInt } from '../gfx/palettes';
 import { centerPixText, pixText } from '../util/ui';
 import { music, sfx } from '../audio/index';
+import { safeInsets } from '../systems/Layout';
 
 export class MainMenuScene extends Phaser.Scene {
   constructor() {
@@ -57,7 +58,9 @@ export class MainMenuScene extends Phaser.Scene {
     const paul = this.add.image(vw / 2, vh * 0.68, ATLAS, 'char_paul');
     paul.setScale(2);
 
-    const settings = pixText(this, 8, 8, 'SETTINGS', 1, hexToInt(C.sand4));
+    // Camera is zoomed, so convert the safe-area inset into world units.
+    const safe = safeInsets();
+    const settings = pixText(this, safe.left / zoom + 6, safe.top / zoom + 6, 'SETTINGS', 1, hexToInt(C.sand4));
     settings.setInteractive({ useHandCursor: true });
     settings.on('pointerdown', (p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
       ev.stopPropagation();
