@@ -9,6 +9,8 @@ import { HudScene } from './scenes/HudScene';
 import { LevelUpScene } from './scenes/LevelUpScene';
 import { PauseScene } from './scenes/PauseScene';
 import { ResultsScene } from './scenes/ResultsScene';
+import { CharacterSelectScene } from './scenes/CharacterSelectScene';
+import { MetaUpgradeScene } from './scenes/MetaUpgradeScene';
 
 installTestHooks();
 
@@ -38,6 +40,8 @@ const game = new Phaser.Game({
     LevelUpScene,
     PauseScene,
     ResultsScene,
+    CharacterSelectScene,
+    MetaUpgradeScene,
   ],
 });
 

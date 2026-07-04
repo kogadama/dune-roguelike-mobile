@@ -168,6 +168,38 @@ test('boss spawns at final band and victory reaches results', async ({ page }) =
   expect(errors.filter(realError)).toEqual([]);
 });
 
+test('save persists across reload and character select works', async ({ page }) => {
+  const errors = await collectErrors(page);
+  // Run 1: die, earn meta XP.
+  await page.goto('/?autostart=jessica:arrakeen&seed=11&timescale=8');
+  await waitReady(page);
+  await page.waitForFunction(() => window.__test.state()?.scene === 'Game');
+  await page.waitForFunction(() => (window.__test.state()?.kills ?? 0) > 2, undefined, { timeout: 30_000 });
+  await page.evaluate(() => window.__test.killPlayer!());
+  await page.waitForTimeout(1800);
+  const saved = await page.evaluate(async () => {
+    const raw = localStorage.getItem('sietch-save-v1');
+    return raw ? JSON.parse(raw) : null;
+  });
+  expect(saved?.characters?.jessica?.runs).toBeGreaterThanOrEqual(1);
+  expect(saved?.characters?.jessica?.xp).toBeGreaterThan(0);
+
+  // Reload into the menu flow: menu -> character select renders with data.
+  await page.goto('/');
+  await waitReady(page);
+  await page.waitForTimeout(300);
+  const vp = page.viewportSize()!;
+  await page.touchscreen.tap(vp.width / 2, vp.height / 2); // tap to begin
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${ART}/10-charselect.png` });
+  const persisted = await page.evaluate(() => {
+    const save = window.__test.game?.registry.get('save') as { data?: { characters?: { jessica?: { runs: number } } } };
+    return save?.data?.characters?.jessica?.runs ?? 0;
+  });
+  expect(persisted).toBeGreaterThanOrEqual(1);
+  expect(errors.filter(realError)).toEqual([]);
+});
+
 function realError(e: string): boolean {
   // SwiftShader / headless GL warnings are not app bugs.
   if (e.includes('swiftshader') || e.includes('GPU stall')) return false;
