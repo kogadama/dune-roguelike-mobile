@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { C, hexToInt } from '../gfx/palettes';
-import { pixText } from '../util/ui';
+import { pixText, uiBounds } from '../util/ui';
 import type { SaveManager } from '../save/SaveManager';
 import type { LayoutMode } from '../types';
 import { sfx, music } from '../audio/index';
@@ -14,6 +14,8 @@ export interface PauseData {
 /** Pause menu + settings. Doubles as the settings screen from the main menu. */
 export class PauseScene extends Phaser.Scene {
   private fromMenu = false;
+  /** Safe-area horizontal center, set in create(). */
+  private cx = 0;
 
   constructor() {
     super('Pause');
@@ -23,30 +25,36 @@ export class PauseScene extends Phaser.Scene {
     this.fromMenu = data.fromMenu ?? false;
     this.scale.on('resize', this.onResize, this);
     this.events.once('shutdown', () => this.scale.off('resize', this.onResize, this));
-    const w = this.scale.width;
-    const h = this.scale.height;
+    // Dim layer goes full-bleed; content stays inside the safe area.
+    const fullW = this.scale.width;
+    const fullH = this.scale.height;
+    const B = uiBounds(this);
+    const w = B.w;
+    const h = B.h;
+    this.cx = B.x + w / 2;
+    const oy = B.y;
     const u = Phaser.Math.Clamp(Math.round(Math.min(w, h) / 200), 2, 5);
     const save = this.registry.get('save') as SaveManager;
 
-    this.add.rectangle(w / 2, h / 2, w, h, 0x0d0906, this.fromMenu ? 1 : 0.78).setInteractive();
+    this.add.rectangle(fullW / 2, fullH / 2, fullW, fullH, 0x0d0906, this.fromMenu ? 1 : 0.78).setInteractive();
 
     const title = pixText(this, 0, 0, this.fromMenu ? 'SETTINGS' : 'PAUSED', u + 1, hexToInt(C.spice3));
-    title.setPosition(Math.round(w / 2 - title.width / 2), h * 0.08);
+    title.setPosition(Math.round(this.cx - title.width / 2), oy + h * 0.08);
 
     const vol = (v: number) => `${Math.round(v * 100)}%`;
     const layoutLabel = (m: LayoutMode) =>
       m === 'auto' ? 'LAYOUT: AUTO' : m === 'landscape' ? 'LAYOUT: LANDSCAPE' : 'LAYOUT: GAMEBOY';
 
-    let y = h * 0.22;
+    let y = oy + h * 0.22;
     const gap = Math.max(26, h * 0.075);
     const s = save.data.settings;
 
     if (!this.fromMenu) {
-      this.makeButton(w / 2, y, 'RESUME', u, () => this.resumeGame(), hexToInt(C.green));
+      this.makeButton(this.cx, y, 'RESUME', u, () => this.resumeGame(), hexToInt(C.green));
       y += gap * 1.2;
     }
 
-    const layoutBtn = this.makeButton(w / 2, y, layoutLabel(s.layoutMode), u, () => {
+    const layoutBtn = this.makeButton(this.cx, y, layoutLabel(s.layoutMode), u, () => {
       const order: LayoutMode[] = ['auto', 'landscape', 'gbc'];
       s.layoutMode = order[(order.indexOf(s.layoutMode) + 1) % order.length]!;
       save.save();
@@ -55,7 +63,7 @@ export class PauseScene extends Phaser.Scene {
     });
     y += gap;
 
-    const sfxBtn = this.makeButton(w / 2, y, `SFX: ${vol(s.sfxVolume)}`, u, () => {
+    const sfxBtn = this.makeButton(this.cx, y, `SFX: ${vol(s.sfxVolume)}`, u, () => {
       s.sfxVolume = Math.round(((s.sfxVolume + 0.25) % 1.25) * 100) / 100;
       sfx.volume = s.sfxVolume;
       save.save();
@@ -63,7 +71,7 @@ export class PauseScene extends Phaser.Scene {
     });
     y += gap;
 
-    const musBtn = this.makeButton(w / 2, y, `MUSIC: ${vol(s.musicVolume)}`, u, () => {
+    const musBtn = this.makeButton(this.cx, y, `MUSIC: ${vol(s.musicVolume)}`, u, () => {
       s.musicVolume = Math.round(((s.musicVolume + 0.25) % 1.25) * 100) / 100;
       music.setVolume(s.musicVolume);
       save.save();
@@ -71,7 +79,7 @@ export class PauseScene extends Phaser.Scene {
     });
     y += gap;
 
-    const fpsBtn = this.makeButton(w / 2, y, `FPS CAP: ${s.fpsCap}`, u, () => {
+    const fpsBtn = this.makeButton(this.cx, y, `FPS CAP: ${s.fpsCap}`, u, () => {
       s.fpsCap = s.fpsCap === 60 ? 30 : 60;
       applyFpsCap(this.game, s.fpsCap);
       save.save();
@@ -79,7 +87,7 @@ export class PauseScene extends Phaser.Scene {
     });
     y += gap;
 
-    const batBtn = this.makeButton(w / 2, y, `BATTERY SAVER: ${s.batterySaver ? 'ON' : 'OFF'}`, u, () => {
+    const batBtn = this.makeButton(this.cx, y, `BATTERY SAVER: ${s.batterySaver ? 'ON' : 'OFF'}`, u, () => {
       s.batterySaver = !s.batterySaver;
       save.save();
       this.relabel(batBtn, `BATTERY SAVER: ${s.batterySaver ? 'ON' : 'OFF'}`);
@@ -87,7 +95,7 @@ export class PauseScene extends Phaser.Scene {
     });
     y += gap;
 
-    const dmgBtn = this.makeButton(w / 2, y, `DAMAGE NUMBERS: ${s.showDamageNumbers ? 'ON' : 'OFF'}`, u, () => {
+    const dmgBtn = this.makeButton(this.cx, y, `DAMAGE NUMBERS: ${s.showDamageNumbers ? 'ON' : 'OFF'}`, u, () => {
       s.showDamageNumbers = !s.showDamageNumbers;
       save.save();
       this.relabel(dmgBtn, `DAMAGE NUMBERS: ${s.showDamageNumbers ? 'ON' : 'OFF'}`);
@@ -95,7 +103,7 @@ export class PauseScene extends Phaser.Scene {
     });
     y += gap;
 
-    const hapBtn = this.makeButton(w / 2, y, `HAPTICS: ${s.haptics ? 'ON' : 'OFF'}`, u, () => {
+    const hapBtn = this.makeButton(this.cx, y, `HAPTICS: ${s.haptics ? 'ON' : 'OFF'}`, u, () => {
       s.haptics = !s.haptics;
       setHapticsEnabled(s.haptics);
       save.save();
@@ -104,9 +112,9 @@ export class PauseScene extends Phaser.Scene {
     y += gap * 1.1;
 
     if (this.fromMenu) {
-      this.makeButton(w / 2, y, 'BACK', u, () => this.scene.start('MainMenu'));
+      this.makeButton(this.cx, y, 'BACK', u, () => this.scene.start('MainMenu'));
     } else {
-      this.makeButton(w / 2, y, 'ABANDON RUN', u, () => {
+      this.makeButton(this.cx, y, 'ABANDON RUN', u, () => {
         this.scene.stop('Game');
         this.scene.stop('Hud');
         this.scene.stop();
@@ -122,7 +130,7 @@ export class PauseScene extends Phaser.Scene {
 
   private relabel(t: Phaser.GameObjects.BitmapText, label: string): void {
     t.setText(label);
-    t.setX(Math.round(this.scale.width / 2 - t.width / 2));
+    t.setX(Math.round(this.cx - t.width / 2));
   }
 
   private resumeGame(): void {

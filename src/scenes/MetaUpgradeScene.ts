@@ -4,7 +4,7 @@ import { treeForCharacter } from '../data/metaTree';
 import { buyNode, skillPointsAvailable } from '../systems/MetaProgression';
 import type { CharacterId } from '../types';
 import { C, hexToInt } from '../gfx/palettes';
-import { pixText, centerPixText } from '../util/ui';
+import { pixText, centerPixText, uiBounds } from '../util/ui';
 import type { SaveManager } from '../save/SaveManager';
 
 export interface MetaUpgradeData {
@@ -29,8 +29,12 @@ export class MetaUpgradeScene extends Phaser.Scene {
 
   private render = (): void => {
     this.children.removeAll(true);
-    const w = this.scale.width;
-    const h = this.scale.height;
+    // Lay out inside the safe-area rect (Dynamic Island / home bar).
+    const B = uiBounds(this);
+    const ox = B.x;
+    const oy = B.y;
+    const w = B.w;
+    const h = B.h;
     const u = Phaser.Math.Clamp(Math.round(Math.min(w, h) / 200), 2, 5);
     const save = this.registry.get('save') as SaveManager;
     const def = CHARACTERS[this.characterId];
@@ -38,15 +42,15 @@ export class MetaUpgradeScene extends Phaser.Scene {
     const pts = skillPointsAvailable(save, this.characterId);
     const portrait = h > w;
 
-    centerPixText(this, w / 2, h * 0.05, `${def.name.toUpperCase()} - TRAINING`, u, hexToInt(C.spice3));
-    centerPixText(this, w / 2, h * 0.05 + 16 * (u / 2), `LV ${cs.level}   POINTS: ${pts}`, Math.max(1, u - 1), hexToInt(C.gold));
+    centerPixText(this, ox + w / 2, oy + h * 0.05, `${def.name.toUpperCase()} - TRAINING`, u, hexToInt(C.spice3));
+    centerPixText(this, ox + w / 2, oy + h * 0.05 + 16 * (u / 2), `LV ${cs.level}   POINTS: ${pts}`, Math.max(1, u - 1), hexToInt(C.gold));
 
     const nodes = treeForCharacter(this.characterId);
     const cols = portrait ? 2 : 3;
     const cellW = (w * 0.92) / cols;
     const cellH = portrait ? h * 0.115 : h * 0.17;
-    const x0 = w * 0.04;
-    const y0 = h * 0.16;
+    const x0 = ox + w * 0.04;
+    const y0 = oy + h * 0.16;
 
     nodes.forEach((node, i) => {
       const col = i % cols;
@@ -90,7 +94,7 @@ export class MetaUpgradeScene extends Phaser.Scene {
       }
     });
 
-    const backBtn = pixText(this, 10, 10, '< BACK', Math.max(1, u - 1), hexToInt(C.sand4));
+    const backBtn = pixText(this, ox + 10, oy + 10, '< BACK', Math.max(1, u - 1), hexToInt(C.sand4));
     backBtn.setInteractive({ useHandCursor: true });
     backBtn.on('pointerdown', () => this.scene.start('CharacterSelect'));
   };

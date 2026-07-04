@@ -4,7 +4,7 @@ import { applyUpgrade } from '../data/upgrades';
 import type { RunState } from '../systems/RunState';
 import { ATLAS } from '../gfx/AtlasBuilder';
 import { C, hexToInt } from '../gfx/palettes';
-import { pixText } from '../util/ui';
+import { pixText, uiBounds } from '../util/ui';
 import { sfx } from '../audio/index';
 
 export interface LevelUpData {
@@ -25,21 +25,26 @@ export class LevelUpScene extends Phaser.Scene {
     this.payload = data;
     this.scale.on('resize', this.onResize, this);
     this.events.once('shutdown', () => this.scale.off('resize', this.onResize, this));
-    const w = this.scale.width;
-    const h = this.scale.height;
+    const fullW = this.scale.width;
+    const fullH = this.scale.height;
+    const B = uiBounds(this);
+    const ox = B.x;
+    const oy = B.y;
+    const w = B.w;
+    const h = B.h;
     const run = this.registry.get('run') as RunState;
     const portrait = h > w;
     const u = Phaser.Math.Clamp(Math.round(Math.min(w, h) / 200), 2, 5);
 
-    const dim = this.add.rectangle(w / 2, h / 2, w, h, 0x0d0906, 0.72);
+    const dim = this.add.rectangle(fullW / 2, fullH / 2, fullW, fullH, 0x0d0906, 0.72);
     dim.setInteractive(); // block tap-through
 
     const title = data.reason === 'chest' ? 'SPOILS OF WAR' : `LEVEL ${run.level}`;
     const t = pixText(this, 0, 0, title, u + 1, hexToInt(C.spice3));
-    t.setPosition(Math.round(w / 2 - t.width / 2), Math.round(h * (portrait ? 0.16 : 0.1)));
+    t.setPosition(Math.round(ox + w / 2 - t.width / 2), Math.round(oy + h * (portrait ? 0.16 : 0.1)));
 
     const sub = pixText(this, 0, 0, 'CHOOSE YOUR PATH', u - 1, hexToInt(C.sand4));
-    sub.setPosition(Math.round(w / 2 - sub.width / 2), t.y + t.height + 6);
+    sub.setPosition(Math.round(ox + w / 2 - sub.width / 2), t.y + t.height + 6);
 
     // Card geometry.
     const n = data.options.length;
@@ -48,8 +53,8 @@ export class LevelUpScene extends Phaser.Scene {
     const gap = portrait ? 12 : Math.min(w * 0.02, 20);
 
     for (let i = 0; i < n; i++) {
-      const cx = portrait ? w / 2 : w / 2 + (i - (n - 1) / 2) * (cardW + gap);
-      const cy = portrait ? h * 0.36 + i * (cardH + gap) : h * 0.58;
+      const cx = portrait ? ox + w / 2 : ox + w / 2 + (i - (n - 1) / 2) * (cardW + gap);
+      const cy = portrait ? oy + h * 0.36 + i * (cardH + gap) : oy + h * 0.58;
       this.makeCard(cx, cy, cardW, cardH, data.options[i]!, u, portrait, i);
     }
   }
