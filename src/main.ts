@@ -6,6 +6,7 @@ import { TextureGenScene } from './scenes/TextureGenScene';
 import { MainMenuScene } from './scenes/MainMenuScene';
 import { GameScene } from './scenes/GameScene';
 import { HudScene } from './scenes/HudScene';
+import { LevelUpScene } from './scenes/LevelUpScene';
 
 installTestHooks();
 
@@ -26,7 +27,7 @@ const game = new Phaser.Game({
   fps: {
     smoothStep: true,
   },
-  scene: [BootScene, TextureGenScene, MainMenuScene, GameScene, HudScene],
+  scene: [BootScene, TextureGenScene, MainMenuScene, GameScene, HudScene, LevelUpScene],
 });
 
 testApi.game = game;

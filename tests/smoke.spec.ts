@@ -66,6 +66,34 @@ test('joystick drag moves the player', async ({ page }) => {
   expect(errors.filter(realError)).toEqual([]);
 });
 
+test('accelerated run: enemies spawn, weapons kill, level-ups fire', async ({ page }) => {
+  const errors = await collectErrors(page);
+  await page.goto('/?autostart=paul:arrakeen&seed=7&timescale=8');
+  await waitReady(page);
+  await page.waitForFunction(() => window.__test.state()?.scene === 'Game');
+  // Let the sim run (8x): ~64 sim-seconds.
+  await page.waitForFunction(
+    () => {
+      const s = window.__test.state();
+      return (s?.kills ?? 0) > 3;
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.screenshot({ path: `${ART}/03-horde.png` });
+  // Grant XP to force a level-up choice overlay.
+  await page.evaluate(() => window.__test.grantXp!(500));
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: `${ART}/04-levelup.png` });
+  // Pick the first card.
+  const vp = page.viewportSize()!;
+  await page.touchscreen.tap(vp.width * 0.23, vp.height * 0.58);
+  await page.waitForTimeout(400);
+  const state = await page.evaluate(() => window.__test.state());
+  expect(state?.level).toBeGreaterThanOrEqual(2);
+  expect(errors.filter(realError)).toEqual([]);
+});
+
 function realError(e: string): boolean {
   // SwiftShader / headless GL warnings are not app bugs.
   if (e.includes('swiftshader') || e.includes('GPU stall')) return false;
