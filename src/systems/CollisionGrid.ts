@@ -12,6 +12,9 @@ export class CollisionGrid {
   private next: Int32Array;
   private xs: Float32Array;
   private ys: Float32Array;
+  /** Per-query bucket stamps: dedupes buckets that hash-collide in one query. */
+  private bucketStamp = new Int32Array(BUCKETS);
+  private queryId = 0;
 
   constructor(capacity: number) {
     this.next = new Int32Array(capacity).fill(-1);
@@ -45,9 +48,20 @@ export class CollisionGrid {
     const cx1 = Math.floor((x + r) / CELL);
     const cy0 = Math.floor((y - r) / CELL);
     const cy1 = Math.floor((y + r) / CELL);
+    // Two nearby cells can hash to the same bucket; without dedupe that
+    // bucket's chain is walked twice and the callback fires twice per entry
+    // (double damage). Stamp visited buckets with a per-query id.
+    if (this.queryId >= 0x7fffffff) {
+      this.queryId = 0;
+      this.bucketStamp.fill(0);
+    }
+    const qid = ++this.queryId;
     for (let cy = cy0; cy <= cy1; cy++) {
       for (let cx = cx0; cx <= cx1; cx++) {
-        let i = this.head[CollisionGrid.hash(cx, cy)]!;
+        const b = CollisionGrid.hash(cx, cy);
+        if (this.bucketStamp[b] === qid) continue;
+        this.bucketStamp[b] = qid;
+        let i = this.head[b]!;
         while (i !== -1) {
           const dx = this.xs[i]! - x;
           const dy = this.ys[i]! - y;

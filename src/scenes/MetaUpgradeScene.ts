@@ -4,7 +4,8 @@ import { treeForCharacter } from '../data/metaTree';
 import { buyNode, skillPointsAvailable } from '../systems/MetaProgression';
 import type { CharacterId } from '../types';
 import { C, hexToInt } from '../gfx/palettes';
-import { pixText, centerPixText, uiBounds } from '../util/ui';
+import { pixText, centerPixText, textButton, uiBounds } from '../util/ui';
+import { sfx } from '../audio/index';
 import type { SaveManager } from '../save/SaveManager';
 
 export interface MetaUpgradeData {
@@ -87,6 +88,7 @@ export class MetaUpgradeScene extends Phaser.Scene {
         const zone = this.add.zone(cx, cy, cellW - 8, cellH).setInteractive({ useHandCursor: true });
         zone.on('pointerdown', () => {
           if (buyNode(save, this.characterId, node.id)) {
+            sfx.play('levelup');
             this.cameras.main.flash(120, 60, 200, 90, true);
             this.render();
           }
@@ -94,8 +96,7 @@ export class MetaUpgradeScene extends Phaser.Scene {
       }
     });
 
-    const backBtn = pixText(this, ox + 10, oy + 10, '< BACK', Math.max(1, u - 1), hexToInt(C.sand4));
-    backBtn.setInteractive({ useHandCursor: true });
-    backBtn.on('pointerdown', () => this.scene.start('CharacterSelect'));
+    textButton(this, ox + 10, oy + 10, '< BACK', Math.max(1, u - 1), hexToInt(C.sand4),
+      () => this.scene.start('CharacterSelect'), { align: 'topLeft' });
   };
 }

@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { VIRTUAL_HEIGHT } from '../config';
 import { ATLAS } from '../gfx/AtlasBuilder';
 import { C, hexToInt } from '../gfx/palettes';
-import { centerPixText, pixText } from '../util/ui';
+import { centerPixText, textButton } from '../util/ui';
 import { music, sfx } from '../audio/index';
 import { safeInsets } from '../systems/Layout';
 
@@ -59,14 +59,17 @@ export class MainMenuScene extends Phaser.Scene {
     paul.setScale(2);
 
     // Camera is zoomed, so convert the safe-area inset into world units.
+    // textButton stops propagation, so this tap never reaches onTap above.
     const safe = safeInsets();
-    const settings = pixText(this, safe.left / zoom + 6, safe.top / zoom + 6, 'SETTINGS', 1, hexToInt(C.sand4));
-    settings.setInteractive({ useHandCursor: true });
-    settings.on('pointerdown', (p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
-      ev.stopPropagation();
-      sfx.play('click');
-      this.scene.start('Pause', { fromMenu: true });
-      void p;
-    });
+    textButton(
+      this,
+      safe.left / zoom + 6,
+      safe.top / zoom + 6,
+      'SETTINGS',
+      1,
+      hexToInt(C.sand4),
+      () => this.scene.start('Pause', { fromMenu: true }),
+      { align: 'topLeft' },
+    );
   }
 }

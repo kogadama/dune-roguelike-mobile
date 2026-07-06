@@ -51,9 +51,14 @@ export class HudScene extends Phaser.Scene {
     this.rebuild();
     this.scale.on('resize', this.rebuild, this);
     this.game.events.on('relayout', this.rebuild, this);
+    // Overlays (Pause/LevelUp) pause this scene, swallowing the pointerup of
+    // any in-flight touch; without a reset the stick stays "held" and the
+    // player drifts (and the old pointer id blocks a fresh stick grab).
+    this.events.on(Phaser.Scenes.Events.PAUSE, this.resetControls, this);
     this.events.once('shutdown', () => {
       this.scale.off('resize', this.rebuild, this);
       this.game.events.off('relayout', this.rebuild, this);
+      this.events.off(Phaser.Scenes.Events.PAUSE, this.resetControls, this);
       this.resetControls();
     });
 
@@ -81,12 +86,17 @@ export class HudScene extends Phaser.Scene {
     }
   }
 
-  private resetControls(): void {
+  private resetControls = (): void => {
     controls.moveX = 0;
     controls.moveY = 0;
     controls.stick.active = false;
+    controls.stick.dx = 0;
+    controls.stick.dy = 0;
+    controls.abilityPressed[0] = false;
+    controls.abilityPressed[1] = false;
+    controls.abilityPressed[2] = false;
     this.movePointerId = -1;
-  }
+  };
 
   private rebuild = (): void => {
     const save = this.registry.get('save') as SaveManager | undefined;
@@ -146,18 +156,22 @@ export class HudScene extends Phaser.Scene {
     if (!run) return;
     const L = this.layout;
     const u = this.u;
-    const ids = [...run.character.abilities];
+    // Slots come from the live AbilitySystem so the meta-capstone third
+    // ability gets a touch button too (the character def only lists two).
+    const gameScene = this.scene.get('Game') as import('./GameScene').GameScene | null;
+    const defs = gameScene?.abilities?.slots ?? run.character.abilities.map((id) => ABILITIES[id]);
     const r = (L.mode === 'gbc' ? 34 : 30) * (u / 2.5);
 
-    for (let i = 0; i < ids.length; i++) {
-      const def = ABILITIES[ids[i]!];
+    for (let i = 0; i < defs.length; i++) {
+      const def = defs[i]!;
       let x: number;
       let y: number;
       if (L.mode === 'gbc') {
-        // A/B diagonal pair on the left of the shell (GBC style, mirrored).
+        // GBC-style cluster left of the shell: a zig-zag diagonal (B low,
+        // A high, C low again) that also fits the third capstone slot.
         const { y: cy } = this.gbcStickCenter();
-        x = L.w * 0.14 + (i === 0 ? 0 : r * 1.9);
-        y = cy + (i === 0 ? r * 0.7 : -r * 0.7);
+        x = L.w * 0.14 + i * r * 1.9;
+        y = cy + (i % 2 === 0 ? r * 0.7 : -r * 0.7);
       } else {
         // Bottom-left arc.
         x = L.safe.left + r + 18 + i * (r * 2.4);
@@ -166,19 +180,28 @@ export class HudScene extends Phaser.Scene {
       const icon = this.add.image(x, y, ATLAS, def.icon).setDepth(16).setScale(u * 0.6);
       const label =
         L.mode === 'gbc'
-          ? pixText(this, x - 2, y + r + 4, i === 0 ? 'B' : 'A', 1, hexToInt(GBC_SHELL.text)).setDepth(16)
+          ? pixText(this, x - 2, y + r + 4, ['B', 'A', 'C'][i] ?? '', 1, hexToInt(GBC_SHELL.text)).setDepth(16)
           : null;
       this.buttons.push({ x, y, r, def, icon, label });
     }
 
     testApi.buttons = this.buttons.map((b) => ({ x: b.x, y: b.y }));
 
-    // Pause zone top-right.
-    this.pauseZone = {
-      x: L.w - L.safe.right - 16 - 8,
-      y: (L.mode === 'gbc' ? L.view.y : L.safe.top) + 14,
-      r: 16,
-    };
+    // Pause button: START pill on the shell in GBC mode, top-right circle in
+    // landscape. Both give a >=48px tap circle (hit test adds +8).
+    if (L.mode === 'gbc') {
+      const { y: cy } = this.gbcStickCenter();
+      this.pauseZone = { x: L.w * 0.55, y: cy, r: Math.max(16, u * 8) };
+      const startLabel = pixText(this, 0, 0, 'START', 1, hexToInt(GBC_SHELL.text)).setDepth(16);
+      startLabel.setPosition(
+        Math.round(this.pauseZone.x - startLabel.width / 2),
+        Math.round(this.pauseZone.y + Math.max(9, u * 4) / 2 + 4),
+      );
+    } else {
+      const pr = Math.max(16, u * 8);
+      this.pauseZone = { x: L.w - L.safe.right - pr - 10, y: L.safe.top + pr + 10, r: pr };
+    }
+    testApi.pauseButton = { x: this.pauseZone.x, y: this.pauseZone.y };
   }
 
   // ---- Touch input ----
@@ -262,7 +285,10 @@ export class HudScene extends Phaser.Scene {
     if (this.scene.isPaused('Game')) return;
     this.scene.pause('Game');
     this.scene.pause();
-    this.scene.launch('Pause');
+    // Explicit data: Phaser keeps a scene's previous settings.data when
+    // launched without any, so a stale {fromMenu:true} from the main-menu
+    // settings screen would otherwise hide RESUME/ABANDON here.
+    this.scene.launch('Pause', { fromMenu: false });
   }
 
   override update(): void {
@@ -405,11 +431,28 @@ export class HudScene extends Phaser.Scene {
     g.fillStyle(hexToInt(C.blue), 0.9);
     g.fillRect(barX + 1, xpY + 1, (barW - 2) * Phaser.Math.Clamp(run.xp / run.xpNeeded, 0, 1), u - 1);
 
-    // Pause icon.
+    // Pause button.
     const pz = this.pauseZone;
-    g.fillStyle(0xffffff, 0.75);
-    g.fillRect(pz.x - 5, pz.y - 6, 4, 12);
-    g.fillRect(pz.x + 2, pz.y - 6, 4, 12);
+    if (L.mode === 'gbc') {
+      // START pill on the shell, GBC style.
+      const pw = Math.max(30, u * 15);
+      const ph = Math.max(9, u * 4);
+      g.fillStyle(hexToInt(GBC_SHELL.buttonShadow), 1);
+      g.fillRoundedRect(pz.x - pw / 2, pz.y - ph / 2 + 2, pw, ph, ph / 2);
+      g.fillStyle(hexToInt(GBC_SHELL.bodyDark), 1);
+      g.fillRoundedRect(pz.x - pw / 2, pz.y - ph / 2, pw, ph, ph / 2);
+    } else {
+      g.fillStyle(0x0d0906, 0.45);
+      g.fillCircle(pz.x, pz.y, pz.r);
+      g.lineStyle(2, 0xffffff, 0.3);
+      g.strokeCircle(pz.x, pz.y, pz.r);
+      const pbw = Math.max(4, Math.round(u * 2));
+      const pbh = Math.max(12, Math.round(u * 6));
+      const pgap = Math.max(3, Math.round(u * 1.5));
+      g.fillStyle(0xffffff, 0.75);
+      g.fillRect(pz.x - pgap / 2 - pbw, pz.y - pbh / 2, pbw, pbh);
+      g.fillRect(pz.x + pgap / 2, pz.y - pbh / 2, pbw, pbh);
+    }
 
     const mins = Math.floor(run.time / 60);
     const secs = Math.floor(run.time % 60);
@@ -421,7 +464,10 @@ export class HudScene extends Phaser.Scene {
     this.levelText.setPosition(barX + barW + 6, topY);
 
     this.killText.setVisible(true).setText(`${run.kills}`);
-    const killX = L.mode === 'gbc' ? L.view.x + L.view.w - this.killText.width : L.w - L.safe.right - 8 - this.killText.width;
+    // Landscape: sit left of the pause button so they never overlap.
+    const killX = L.mode === 'gbc'
+      ? L.view.x + L.view.w - this.killText.width
+      : L.w - L.safe.right - pz.r * 2 - 24 - this.killText.width;
     this.killText.setPosition(killX, topY + hpH + 4 + u);
 
     // Boss health bar during boss fights.

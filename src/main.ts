@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { TEST_PARAMS } from './config';
+import { sfx } from './audio/index';
 import { installTestHooks, testApi } from './util/testHooks';
 import { BootScene } from './scenes/BootScene';
 import { TextureGenScene } from './scenes/TextureGenScene';
@@ -52,11 +53,15 @@ const game = new Phaser.Game({
 
 testApi.game = game;
 
-// Pause the whole sim when backgrounded (audio and timers included).
+// Pause the whole sim when backgrounded. Sleeping the loop does NOT stop
+// WebAudio — suspend the shared context too, or music keeps playing behind
+// the home screen (iOS interrupts it; Android happily plays on).
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     game.loop.sleep();
+    void sfx.context?.suspend().catch(() => undefined);
   } else {
+    void sfx.context?.resume().catch(() => undefined);
     game.loop.wake();
   }
 });

@@ -77,7 +77,7 @@ export class EnemySystem {
         shotTimer: 0,
         fx: 0,
         fy: 0,
-        wobble: Math.random() * Math.PI * 2,
+        wobble: globalRng.range(0, Math.PI * 2),
         sprite,
         hitFlash: 0,
         bossState: 0,
@@ -98,8 +98,11 @@ export class EnemySystem {
   }
 
   spawn(id: EnemyId, x: number, y: number, elite = false): Enemy | null {
-    if (!elite && this.activeCount >= PERF.maxEnemies) return null;
     const def = ENEMIES[id];
+    // Elites and bosses bypass the active cap (the pool is larger than the
+    // cap, so a slot exists). A capped-out boss spawn would otherwise be
+    // dropped and the run could never end — the wave event fires only once.
+    if (!elite && def.behavior !== 'boss' && this.activeCount >= PERF.maxEnemies) return null;
     let e: Enemy | null = null;
     for (const cand of this.enemies) {
       if (!cand.active) {
