@@ -24,9 +24,13 @@ export interface TestApi {
   warpTo: ((seconds: number) => void) | null;
   /** Kill every active enemy, bosses included. */
   slayAll: (() => void) | null;
+  /** Restore the player to full HP (keeps accelerated tests alive). */
+  healFull: (() => void) | null;
   ready: boolean;
   /** HUD ability button centers (canvas px), for touch simulation. */
   buttons: Array<{ x: number; y: number }>;
+  /** HUD pause button center (canvas px). */
+  pauseButton: { x: number; y: number } | null;
 }
 
 declare global {
@@ -43,8 +47,10 @@ export const testApi: TestApi = {
   killPlayer: null,
   warpTo: null,
   slayAll: null,
+  healFull: null,
   ready: false,
   buttons: [],
+  pauseButton: null,
 };
 
 export function installTestHooks(): void {

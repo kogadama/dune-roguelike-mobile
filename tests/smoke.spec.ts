@@ -24,6 +24,24 @@ async function waitReady(page: Page): Promise<void> {
   await page.waitForFunction(() => window.__test?.ready === true, undefined, { timeout: 30_000 });
 }
 
+/**
+ * Real-time wait that tops the player's HP up every chunk so accelerated
+ * late-game waves can't kill the level-1 test character mid-observation.
+ * Fails loudly if the run ended anyway (healFull is nulled on scene end).
+ */
+async function keepAliveWait(page: Page, ms: number): Promise<void> {
+  const chunk = 400;
+  for (let waited = 0; waited < ms; waited += chunk) {
+    const alive = await page.evaluate(() => {
+      const heal = window.__test.healFull;
+      if (heal) heal();
+      return heal !== null;
+    });
+    expect(alive, 'run must stay alive during the observation wait').toBe(true);
+    await page.waitForTimeout(Math.min(chunk, ms - waited));
+  }
+}
+
 test('boots to main menu with no errors', async ({ page }) => {
   const errors = await collectErrors(page);
   await page.goto('/');
@@ -159,7 +177,9 @@ test('boss spawns at final band and victory reaches results', async ({ page }) =
     undefined,
     { timeout: 15_000 },
   );
-  await page.waitForTimeout(1200);
+  // Boss telegraph beauty shot. Heal every chunk: at 8x a level-1 character
+  // cannot survive this many sim-seconds of final-band density unassisted.
+  await keepAliveWait(page, 1200);
   await page.screenshot({ path: `${ART}/08-boss.png` });
   // Slay everything (boss included) -> victory -> results.
   await page.evaluate(() => window.__test.slayAll!());
@@ -212,8 +232,9 @@ test('deep desert: sandtrout waves and Shai-Hulud boss cycle', async ({ page }) 
   // Warp to worm time.
   await page.evaluate(() => window.__test.warpTo!(1139));
   await page.waitForFunction(() => (window.__test.state()?.runTime ?? 0) > 1141, undefined, { timeout: 15_000 });
-  // Let the worm cycle submerge->telegraph->emerge at least once.
-  await page.waitForTimeout(2500);
+  // Let the worm cycle submerge->telegraph->emerge at least once (a full
+  // cycle is ~6.4 sim-seconds = ~0.8s real at 8x), healing throughout.
+  await keepAliveWait(page, 1650);
   await page.screenshot({ path: `${ART}/14-shaihulud.png` });
   await page.evaluate(() => window.__test.slayAll!());
   await page.waitForTimeout(2600);

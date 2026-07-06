@@ -27,6 +27,7 @@ import { computeLayout, type LayoutInfo } from '../systems/Layout';
 import { TEST_PARAMS } from '../config';
 import { testApi } from '../util/testHooks';
 import type { SaveManager } from '../save/SaveManager';
+import { globalRng } from '../util/rng';
 
 export interface GameSceneData {
   characterId: CharacterId;
@@ -84,7 +85,8 @@ export class GameScene extends Phaser.Scene {
       if (document.visibilityState === 'hidden' && this.scene.isActive()) {
         this.scene.pause();
         this.scene.pause('Hud');
-        this.scene.launch('Pause');
+        // Explicit data — see HudScene.openPause.
+        this.scene.launch('Pause', { fromMenu: false });
       }
     };
     document.addEventListener('visibilitychange', onHidden);
@@ -227,6 +229,19 @@ export class GameScene extends Phaser.Scene {
         if (e.active) this.enemies.kill(e);
       }
     };
+    testApi.healFull = () => {
+      if (!this.run.dead) this.run.hp = this.run.stats.maxHp;
+    };
+    // Run-scoped hooks must not outlive the scene: a stale closure would
+    // poke destroyed game objects and throw from inside a test.
+    this.events.once('shutdown', () => {
+      testApi.state = () => null;
+      testApi.grantXp = null;
+      testApi.killPlayer = null;
+      testApi.warpTo = null;
+      testApi.slayAll = null;
+      testApi.healFull = null;
+    });
   }
 
   private onEnemyDeath(e: Enemy): void {
@@ -242,8 +257,8 @@ export class GameScene extends Phaser.Scene {
       this.particles.explode(e.x, e.y, true);
       this.cameras.main.shake(100, 0.003);
     }
-    // Occasional water drop from tough enemies.
-    if (e.def.xp >= 4 && !e.elite && Math.random() < 0.06) {
+    // Occasional water drop from tough enemies (seeded rng: ?seed= stays reproducible).
+    if (e.def.xp >= 4 && !e.elite && globalRng.chance(0.06)) {
       this.pickups.spawnSpecial(e.x - 8, e.y, 'water');
     }
     if (e.def.behavior === 'boss') {

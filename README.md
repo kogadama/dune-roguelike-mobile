@@ -66,7 +66,7 @@ npm run gen:icons    # regenerate PWA icons (only needed if the art changes)
 
 Useful dev URL params: `?autostart=paul:arrakeen&timescale=8&seed=42`
 (skip menus, accelerate the sim, reproducible RNG). Debug hooks live on
-`window.__test` (grantXp, warpTo, slayAll, killPlayer).
+`window.__test` (grantXp, warpTo, slayAll, killPlayer, healFull).
 
 ## Architecture notes
 

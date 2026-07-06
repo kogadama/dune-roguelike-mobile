@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { C, hexToInt } from '../gfx/palettes';
-import { pixText, uiBounds } from '../util/ui';
+import { centerPixText, textButton, uiBounds, type TextButton } from '../util/ui';
 import type { SaveManager } from '../save/SaveManager';
 import type { LayoutMode } from '../types';
 import { sfx, music } from '../audio/index';
@@ -14,8 +14,6 @@ export interface PauseData {
 /** Pause menu + settings. Doubles as the settings screen from the main menu. */
 export class PauseScene extends Phaser.Scene {
   private fromMenu = false;
-  /** Safe-area horizontal center, set in create(). */
-  private cx = 0;
 
   constructor() {
     super('Pause');
@@ -29,98 +27,131 @@ export class PauseScene extends Phaser.Scene {
     const fullW = this.scale.width;
     const fullH = this.scale.height;
     const B = uiBounds(this);
+    const ox = B.x;
+    const oy = B.y;
     const w = B.w;
     const h = B.h;
-    this.cx = B.x + w / 2;
-    const oy = B.y;
+    const portrait = h > w;
     const u = Phaser.Math.Clamp(Math.round(Math.min(w, h) / 200), 2, 5);
     const save = this.registry.get('save') as SaveManager;
+    const cx = ox + w / 2;
 
     this.add.rectangle(fullW / 2, fullH / 2, fullW, fullH, 0x0d0906, this.fromMenu ? 1 : 0.78).setInteractive();
 
-    const title = pixText(this, 0, 0, this.fromMenu ? 'SETTINGS' : 'PAUSED', u + 1, hexToInt(C.spice3));
-    title.setPosition(Math.round(this.cx - title.width / 2), oy + h * 0.08);
+    centerPixText(this, cx, oy + h * 0.08, this.fromMenu ? 'SETTINGS' : 'PAUSED', u + 1, hexToInt(C.spice3));
 
     const vol = (v: number) => `${Math.round(v * 100)}%`;
+    // Snap to the 0/25/50/75/100 grid — the 0.8/0.5 defaults land on it after one tap.
+    const nextVol = (v: number) => ((Math.round(v * 4) + 1) % 5) / 4;
     const layoutLabel = (m: LayoutMode) =>
       m === 'auto' ? 'LAYOUT: AUTO' : m === 'landscape' ? 'LAYOUT: LANDSCAPE' : 'LAYOUT: GAMEBOY';
 
-    let y = oy + h * 0.22;
-    const gap = Math.max(26, h * 0.075);
     const s = save.data.settings;
 
+    // Settings rows: label() re-evaluated after every tap to refresh the text
+    // (and, via TextButton.setLabel, the hit area — a plain setText would
+    // leave the old hit rect behind).
+    const rows: Array<{ label: () => string; onTap: () => void }> = [
+      {
+        label: () => layoutLabel(s.layoutMode),
+        onTap: () => {
+          const order: LayoutMode[] = ['auto', 'landscape', 'gbc'];
+          s.layoutMode = order[(order.indexOf(s.layoutMode) + 1) % order.length]!;
+          save.save();
+          this.game.events.emit('relayout');
+        },
+      },
+      {
+        label: () => `SFX: ${vol(s.sfxVolume)}`,
+        onTap: () => {
+          s.sfxVolume = nextVol(s.sfxVolume);
+          sfx.volume = s.sfxVolume;
+          save.save();
+        },
+      },
+      {
+        label: () => `MUSIC: ${vol(s.musicVolume)}`,
+        onTap: () => {
+          s.musicVolume = nextVol(s.musicVolume);
+          music.setVolume(s.musicVolume);
+          save.save();
+        },
+      },
+      {
+        label: () => `FPS CAP: ${s.fpsCap}`,
+        onTap: () => {
+          s.fpsCap = s.fpsCap === 60 ? 30 : 60;
+          applyFpsCap(this.game, s.fpsCap);
+          save.save();
+        },
+      },
+      {
+        label: () => `BATTERY SAVER: ${s.batterySaver ? 'ON' : 'OFF'}`,
+        onTap: () => {
+          s.batterySaver = !s.batterySaver;
+          save.save();
+          this.game.events.emit('batterysaver', s.batterySaver);
+        },
+      },
+      {
+        label: () => `DAMAGE NUMBERS: ${s.showDamageNumbers ? 'ON' : 'OFF'}`,
+        onTap: () => {
+          s.showDamageNumbers = !s.showDamageNumbers;
+          save.save();
+          this.game.events.emit('dmgnumbers', s.showDamageNumbers);
+        },
+      },
+      {
+        label: () => `HAPTICS: ${s.haptics ? 'ON' : 'OFF'}`,
+        onTap: () => {
+          s.haptics = !s.haptics;
+          setHapticsEnabled(s.haptics);
+          save.save();
+        },
+      },
+    ];
+
+    // Geometry: single column in portrait; two columns in landscape so the
+    // >=44px touch targets fit the short axis without overlapping.
+    const rowGap = portrait ? Math.max(52, Math.round(h * 0.08)) : Math.max(46, Math.round(h * 0.125));
+    let y = oy + h * (portrait ? 0.2 : 0.22);
+
     if (!this.fromMenu) {
-      this.makeButton(this.cx, y, 'RESUME', u, () => this.resumeGame(), hexToInt(C.green));
-      y += gap * 1.2;
+      textButton(this, cx, y, 'RESUME', u, hexToInt(C.green), () => this.resumeGame(), { frame: true });
+      y += rowGap;
     }
 
-    const layoutBtn = this.makeButton(this.cx, y, layoutLabel(s.layoutMode), u, () => {
-      const order: LayoutMode[] = ['auto', 'landscape', 'gbc'];
-      s.layoutMode = order[(order.indexOf(s.layoutMode) + 1) % order.length]!;
-      save.save();
-      this.relabel(layoutBtn, layoutLabel(s.layoutMode));
-      this.game.events.emit('relayout');
-    });
-    y += gap;
+    const addRow = (row: { label: () => string; onTap: () => void }, rx: number, ry: number): void => {
+      const btn: TextButton = textButton(this, rx, ry, row.label(), u, hexToInt(C.sand5), () => {
+        row.onTap();
+        btn.setLabel(row.label());
+      });
+    };
 
-    const sfxBtn = this.makeButton(this.cx, y, `SFX: ${vol(s.sfxVolume)}`, u, () => {
-      s.sfxVolume = Math.round(((s.sfxVolume + 0.25) % 1.25) * 100) / 100;
-      sfx.volume = s.sfxVolume;
-      save.save();
-      this.relabel(sfxBtn, `SFX: ${vol(s.sfxVolume)}`);
-    });
-    y += gap;
-
-    const musBtn = this.makeButton(this.cx, y, `MUSIC: ${vol(s.musicVolume)}`, u, () => {
-      s.musicVolume = Math.round(((s.musicVolume + 0.25) % 1.25) * 100) / 100;
-      music.setVolume(s.musicVolume);
-      save.save();
-      this.relabel(musBtn, `MUSIC: ${vol(s.musicVolume)}`);
-    });
-    y += gap;
-
-    const fpsBtn = this.makeButton(this.cx, y, `FPS CAP: ${s.fpsCap}`, u, () => {
-      s.fpsCap = s.fpsCap === 60 ? 30 : 60;
-      applyFpsCap(this.game, s.fpsCap);
-      save.save();
-      this.relabel(fpsBtn, `FPS CAP: ${s.fpsCap}`);
-    });
-    y += gap;
-
-    const batBtn = this.makeButton(this.cx, y, `BATTERY SAVER: ${s.batterySaver ? 'ON' : 'OFF'}`, u, () => {
-      s.batterySaver = !s.batterySaver;
-      save.save();
-      this.relabel(batBtn, `BATTERY SAVER: ${s.batterySaver ? 'ON' : 'OFF'}`);
-      this.game.events.emit('batterysaver', s.batterySaver);
-    });
-    y += gap;
-
-    const dmgBtn = this.makeButton(this.cx, y, `DAMAGE NUMBERS: ${s.showDamageNumbers ? 'ON' : 'OFF'}`, u, () => {
-      s.showDamageNumbers = !s.showDamageNumbers;
-      save.save();
-      this.relabel(dmgBtn, `DAMAGE NUMBERS: ${s.showDamageNumbers ? 'ON' : 'OFF'}`);
-      this.game.events.emit('dmgnumbers', s.showDamageNumbers);
-    });
-    y += gap;
-
-    const hapBtn = this.makeButton(this.cx, y, `HAPTICS: ${s.haptics ? 'ON' : 'OFF'}`, u, () => {
-      s.haptics = !s.haptics;
-      setHapticsEnabled(s.haptics);
-      save.save();
-      this.relabel(hapBtn, `HAPTICS: ${s.haptics ? 'ON' : 'OFF'}`);
-    });
-    y += gap * 1.1;
-
-    if (this.fromMenu) {
-      this.makeButton(this.cx, y, 'BACK', u, () => this.scene.start('MainMenu'));
+    if (portrait) {
+      for (const row of rows) {
+        addRow(row, cx, y);
+        y += rowGap;
+      }
     } else {
-      this.makeButton(this.cx, y, 'ABANDON RUN', u, () => {
+      const colX = [ox + w * 0.27, ox + w * 0.73];
+      rows.forEach((row, i) => {
+        addRow(row, colX[i % 2]!, y + Math.floor(i / 2) * rowGap);
+      });
+      y += Math.ceil(rows.length / 2) * rowGap;
+    }
+
+    y += rowGap * 0.15;
+    if (this.fromMenu) {
+      textButton(this, cx, y, 'BACK', u, hexToInt(C.sand5), () => this.scene.start('MainMenu'), { frame: true });
+    } else {
+      textButton(this, cx, y, 'ABANDON RUN', u, hexToInt(C.red), () => {
         this.scene.stop('Game');
         this.scene.stop('Hud');
         this.scene.stop();
         this.registry.remove('run');
         this.scene.start('MainMenu');
-      }, hexToInt(C.red));
+      });
     }
   }
 
@@ -128,33 +159,9 @@ export class PauseScene extends Phaser.Scene {
     this.scene.restart({ fromMenu: this.fromMenu });
   };
 
-  private relabel(t: Phaser.GameObjects.BitmapText, label: string): void {
-    t.setText(label);
-    t.setX(Math.round(this.cx - t.width / 2));
-  }
-
   private resumeGame(): void {
     this.scene.stop();
     this.scene.resume('Game');
     this.scene.resume('Hud');
-  }
-
-  private makeButton(
-    cx: number,
-    y: number,
-    label: string,
-    u: number,
-    onTap: () => void,
-    tint = hexToInt(C.sand5),
-  ): Phaser.GameObjects.BitmapText {
-    const t = pixText(this, 0, y, label, u, tint);
-    t.setX(Math.round(cx - t.width / 2));
-    t.setInteractive({ useHandCursor: true });
-    t.on('pointerdown', () => {
-      sfx.play('click');
-      this.tweens.add({ targets: t, alpha: 0.4, duration: 60, yoyo: true });
-      onTap();
-    });
-    return t;
   }
 }

@@ -6,8 +6,9 @@ import { skillPointsAvailable } from '../systems/MetaProgression';
 import type { CharacterId, MapId } from '../types';
 import { ATLAS } from '../gfx/AtlasBuilder';
 import { C, hexToInt } from '../gfx/palettes';
-import { pixText, centerPixText, uiBounds } from '../util/ui';
+import { centerPixText, textButton, uiBounds } from '../util/ui';
 import type { SaveManager } from '../save/SaveManager';
+import { sfx } from '../audio/index';
 
 export class CharacterSelectScene extends Phaser.Scene {
   private selectedChar: CharacterId = 'paul';
@@ -75,6 +76,7 @@ export class CharacterSelectScene extends Phaser.Scene {
 
       const zone = this.add.zone(cx, cy, cardW, cardH).setInteractive({ useHandCursor: true });
       zone.on('pointerdown', () => {
+        if (this.selectedChar !== id) sfx.play('click');
         this.selectedChar = id;
         this.render();
       });
@@ -103,38 +105,35 @@ export class CharacterSelectScene extends Phaser.Scene {
       const selected = this.selectedMap === mid;
       const mx = ox + w / 2 + (i === 0 ? -w * 0.18 : w * 0.18);
       const label = unlocked ? MAPS[mid].name : 'LOCKED';
-      const chip = centerPixText(this, mx, mapY, label, Math.max(1, u - 1), selected && unlocked ? hexToInt(C.spice3) : hexToInt(unlocked ? C.sand4 : C.sand2));
-      if (selected && unlocked) {
-        const g = this.add.graphics();
-        g.lineStyle(1, hexToInt(C.spice3), 1);
-        g.strokeRect(chip.x - chip.width / 2 - 6, chip.y - chip.height / 2 - 4, chip.width + 12, chip.height + 8);
-      }
+      const tint = selected && unlocked ? hexToInt(C.spice3) : hexToInt(unlocked ? C.sand4 : C.sand2);
       if (unlocked) {
-        chip.setInteractive({ useHandCursor: true });
-        chip.on('pointerdown', () => {
+        const chip = textButton(this, mx, mapY, label, Math.max(1, u - 1), tint, () => {
           this.selectedMap = mid;
           this.render();
         });
+        if (selected) {
+          const g = this.add.graphics();
+          g.lineStyle(1, hexToInt(C.spice3), 1);
+          const ct = chip.text;
+          g.strokeRect(ct.x - ct.width / 2 - 6, ct.y - ct.height / 2 - 4, ct.width + 12, ct.height + 8);
+        }
+      } else {
+        centerPixText(this, mx, mapY, label, Math.max(1, u - 1), tint);
       }
     });
 
     // Action buttons.
     const btnY = oy + (portrait ? h * 0.82 : h * 0.85);
-    const upBtn = centerPixText(this, ox + w * 0.28, btnY, 'UPGRADES', u, hexToInt(C.blue));
-    upBtn.setInteractive({ useHandCursor: true });
-    upBtn.on('pointerdown', () => {
+    textButton(this, ox + w * 0.28, btnY, 'UPGRADES', u, hexToInt(C.blue), () => {
       this.scene.start('MetaUpgrade', { characterId: this.selectedChar });
-    });
+    }, { frame: true });
 
-    const startBtn = centerPixText(this, ox + w * 0.72, btnY, 'START', u + 1, hexToInt(C.green));
-    startBtn.setInteractive({ useHandCursor: true });
-    startBtn.on('pointerdown', () => {
+    const startBtn = textButton(this, ox + w * 0.72, btnY, 'START', u + 1, hexToInt(C.green), () => {
       this.scene.start('Game', { characterId: this.selectedChar, mapId: this.selectedMap });
-    });
-    this.tweens.add({ targets: startBtn, alpha: 0.55, duration: 700, yoyo: true, repeat: -1 });
+    }, { frame: true, pad: 14 });
+    this.tweens.add({ targets: startBtn.text, alpha: 0.55, duration: 700, yoyo: true, repeat: -1 });
 
-    const backBtn = pixText(this, ox + 10, oy + 10, '< BACK', Math.max(1, u - 1), hexToInt(C.sand4));
-    backBtn.setInteractive({ useHandCursor: true });
-    backBtn.on('pointerdown', () => this.scene.start('MainMenu'));
+    textButton(this, ox + 10, oy + 10, '< BACK', Math.max(1, u - 1), hexToInt(C.sand4),
+      () => this.scene.start('MainMenu'), { align: 'topLeft' });
   };
 }
